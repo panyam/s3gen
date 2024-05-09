@@ -66,9 +66,27 @@ type ResourceBundle struct {
 	resources map[string]*Resource
 }
 
+func (rb *ResourceBundle) Init() *ResourceBundle {
+	if rb.resources == nil {
+		rb.resources = make(map[string]*Resource)
+	}
+	return rb
+}
+
 // Loads a resource and validates it.   Note that a resources may not
 // necessarily be in memory just because it is loaded.  Just a Resource
 // pointer is kept and it can be streamed etc
 func (rb *ResourceBundle) LoadResource(relpath string) (*Resource, error) {
-	return nil, nil
+	res, found := rb.resources[relpath]
+	if res == nil || !found {
+		res = &Resource{
+			Bundle:    rb,
+			Path:      relpath,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			State:     ResourceStatePending,
+		}
+		rb.resources[relpath] = res
+	}
+	return res, nil
 }
