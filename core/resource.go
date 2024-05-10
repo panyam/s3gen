@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -14,6 +13,7 @@ type ContentProcessor interface {
 const (
 	ResourceStatePending = iota
 	ResourceStateLoaded
+	ResourceStateDeleted
 	ResourceStateNotFound
 	ResourceStateFailed
 )
@@ -25,8 +25,8 @@ const (
  * Each resource is uniquely identified by the Bundle + Path combination
  */
 type Resource struct {
-	Bundle      *ResourceBundle
-	Path        string
+	FullPath    string // Unique URI/Path
+	BundleName  string
 	ContentType string
 
 	// Created timestamp on disk
@@ -47,46 +47,31 @@ type Resource struct {
 	DependsOn map[string]bool
 }
 
-func (r *Resource) Id() string {
-	return fmt.Sprintf("%s:%s", r.Bundle.Name, r.Path)
-}
-
 // A ResourceBundle is a collection of resources all nested under a single
 // root directory.
 type ResourceBundle struct {
+	// Name of this resource bundle
+	Name string
+
 	// Root directory where the resources are nested under.
 	// Not *every* file is implicitly loaded.  To add a resource
 	// in a bundle it has to be Loaded first.
 	RootDir string
-
-	// Name of this resource bundle
-	Name string
-
-	// collection of all loaded/"tried" resources in our bundle
-	resources map[string]*Resource
-}
-
-func (rb *ResourceBundle) Init() *ResourceBundle {
-	if rb.resources == nil {
-		rb.resources = make(map[string]*Resource)
-	}
-	return rb
 }
 
 // Loads a resource and validates it.   Note that a resources may not
 // necessarily be in memory just because it is loaded.  Just a Resource
 // pointer is kept and it can be streamed etc
-func (rb *ResourceBundle) LoadResource(relpath string) (*Resource, error) {
-	res, found := rb.resources[relpath]
+func (s *Site) LoadResource(fullpath string) (*Resource, error) {
+	res, found := s.resources[fullpath]
 	if res == nil || !found {
 		res = &Resource{
-			Bundle:    rb,
-			Path:      relpath,
+			FullPath:  fullpath,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 			State:     ResourceStatePending,
 		}
-		rb.resources[relpath] = res
+		s.resources[fullpath] = res
 	}
 	return res, nil
 }
