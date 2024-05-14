@@ -2,7 +2,9 @@ package core
 
 import (
 	"html/template"
+	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -47,7 +49,7 @@ func (s *Site) DestResourceFor(res *Resource) *Resource {
 
 		// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
 		// can use that for language sites
-		destpath = filepath.Join(rem, "index.html")
+		destpath = filepath.Join(s.OutputDir, rem, "index.html")
 		log.Println("ResP: ", respath, "Remaining: ", rem)
 	} else {
 		// basic static file - so copy as is
@@ -90,6 +92,15 @@ func (m *MDContentProcessor) IsIndex(s *Site, res *Resource) bool {
 
 func (m *MDContentProcessor) Process(s *Site, inres *Resource, outres *Resource) error {
 	log.Println("MD Processing: ", inres.FullPath, "------>", outres.FullPath)
+	log.Println("FrontMatter: ", inres.FrontMatter())
+	mdfile, _ := inres.Reader()
+	defer mdfile.Close()
+	mddata, _ := io.ReadAll(mdfile)
+	outres.EnsureDir()
+	log.Println("Writing to: ", outres.FullPath)
+	if err := os.WriteFile(outres.FullPath, mddata, 0644); err != nil {
+		log.Println("Write Error: ", err)
+	}
 	return nil
 }
 

@@ -1,8 +1,10 @@
 package core
 
 import (
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/adrg/frontmatter"
@@ -17,9 +19,9 @@ const (
 )
 
 type FrontMatter struct {
-	Loaded            bool
-	Data              map[string]any
-	FrontMatterLength uint64
+	Loaded bool
+	Data   map[string]any
+	Length int64
 }
 
 /**
@@ -89,12 +91,40 @@ func (s *Site) GetResource(fullpath string) *Resource {
 	return res
 }
 
+func (r *Resource) Reset() {
+	r.State = ResourceStatePending
+	r.info = nil
+	r.Error = nil
+	r.frontMatter.Loaded = false
+}
+
+// Ensures that a resource's parent directory exists
+func (r *Resource) EnsureDir() {
+	dirname := filepath.Dir(r.FullPath)
+	if err := os.MkdirAll(dirname, 0755); err != nil {
+		log.Println("Error creating dir: ", dirname, err)
+	}
+}
+
 func (r *Resource) Info() os.FileInfo {
 	if r.info == nil {
 		r.info, r.Error = os.Stat(r.FullPath)
 		r.State = ResourceStateFailed
 	}
 	return r.info
+}
+
+// Loads the front matter for a resource if it exists
+func (r *Resource) Reader() (io.ReadCloser, error) {
+	// Read the content
+	r.FrontMatter()
+
+	fi, err := os.Open(r.FullPath)
+	if err != nil {
+		return nil, err
+	}
+	fi.Seek(r.frontMatter.Length, 0)
+	return fi, nil
 }
 
 func (r *Resource) FrontMatter() *FrontMatter {
@@ -104,11 +134,17 @@ func (r *Resource) FrontMatter() *FrontMatter {
 			r.Error = err
 			r.State = ResourceStateFailed
 		}
+		r.frontMatter.Data = make(map[string]any)
+		// TODO: We want a library that just returns frontMatter and Length
+		// this way we dont need to load the entire content unless we needed
+		// and even then we could just do it via a reader
 		rest, err := frontmatter.Parse(f, r.frontMatter.Data)
-		log.Println("Rest: ", rest)
+		r.frontMatter.Length = r.Info().Size() - int64(len(rest))
 		if err != nil {
 			r.Error = err
 			r.State = ResourceStateFailed
+		} else {
+			r.frontMatter.Loaded = true
 		}
 	}
 	return &r.frontMatter

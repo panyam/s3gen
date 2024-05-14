@@ -213,7 +213,6 @@ func (s *Site) Load() *Site {
 
 		// map fullpath to a resource here
 		res := s.GetResource(fullpath)
-		log.Println("ResLoad: ", res, res.Error)
 
 		// TODO - refer to cache if this need to be rebuilt? or let Rebuild do it?
 		foundResources = append(foundResources, res)
