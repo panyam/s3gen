@@ -7,6 +7,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/panyam/goutils v0.0.97
 	github.com/radovskyb/watcher v1.0.7
+	github.com/yuin/goldmark v1.7.1
 )
 
 require (
