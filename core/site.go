@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	gfn "github.com/panyam/goutils/fn"
+	gut "github.com/panyam/goutils/utils"
 	"github.com/radovskyb/watcher"
 )
 
@@ -54,7 +54,8 @@ type Site struct {
 	// TODO - easy to do just do sqlite?
 	CacheDir string
 
-	NoLiveReload bool
+	LiveReload bool
+	LazyLoad   bool
 
 	// The http path prefix the site is prefixed in,
 	// eg
@@ -90,6 +91,8 @@ type Site struct {
 }
 
 func (s *Site) Init() *Site {
+	s.ContentRoot = gut.ExpandUserPath(s.ContentRoot)
+	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
 	if s.resources == nil {
 		s.resources = make(map[string]*Resource)
 	}
@@ -113,10 +116,62 @@ func (s *Site) GetRouter() *mux.Router {
 
 		// Now add the file loader/handler for the "published" dir
 		fileServer := http.FileServer(http.Dir(s.OutputDir))
-		x := s.filesRouter.PathPrefix("/")
-		x.Handler(http.StripPrefix("/", fileServer))
+		realHandler := http.StripPrefix("/", fileServer)
+		if s.LazyLoad {
+			/*
+				x := s.filesRouter
+				x.PathPrefix("").Subrouter().Use(func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						log.Println("Doing some decorator: ", r.URL.Path)
+						next.ServeHTTP(w, r)
+					})
+				})
+				// s.filesRouter.PathPrefix("/")
+				x.Handle("/", realHandler)
+			*/
+			x := s.filesRouter.PathPrefix("/")
+			x.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				log.Println("Ensuring path is built: ", r.URL.Path, "Site Prefix: ", s.PathPrefix)
+
+				srcRes := s.urlPathToFilePath(r.URL.Path)
+				log.Println("Source Resource: ", srcRes)
+				// What should happen here?
+				realHandler.ServeHTTP(w, r)
+			}))
+		} else {
+			x := s.filesRouter.PathPrefix("/")
+			x.Handler(realHandler)
+		}
 	}
 	return s.filesRouter
+}
+
+// Given a file in our file system - returns the "URL" that can serve that file.
+func (s *Site) filePathToUrlPath(filePath string) string {
+	res := s.GetResource(filePath)
+	log.Println("Res, Info: ", res, res.Info())
+	return ""
+}
+
+// Given a url path, eg "/a/b/c/d/e" return which "root" resource it can be
+// served by.  The "root" resource is the file that will be used to compile
+// and serve this file.   Eg if we have (assuming our contentRoot is ./data and
+// site root is /blog
+//
+//	/blog/b/c/d/
+//
+// Then we expect the path to be at: ./data/b/c/d/<index.ext>
+//
+// <index.ext> could be one of the "index" files we designate,
+// eg _index.html or index.html or _index.md or index.md etc
+//
+// For now we assume only one of these files exist and it is upto
+// the page oragnizer to pick this.  An exception for this is if we want things like
+func (s *Site) urlPathToFilePath(urlPath string) *Resource {
+	cand := filepath.Join(s.ContentRoot, urlPath)
+	log.Println("Cand: ", cand)
+	// if cand is directory - see if cand/<index_html> exists
+	return nil
 }
 
 // The base entry point for a serving a site with our customer handler
@@ -131,7 +186,7 @@ func (s *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Walks through all our resources and rebuilds/republishes the static site
-func (s *Site) Load() {
+func (s *Site) Load() *Site {
 	var foundResources []*Resource
 	// keep a map of files encountered and their statuses
 	filepath.WalkDir(s.ContentRoot, func(fullpath string, info os.DirEntry, err error) error {
@@ -157,8 +212,8 @@ func (s *Site) Load() {
 		}
 
 		// map fullpath to a resource here
-		res, err2 := s.LoadResource(fullpath)
-		log.Println("ResLoad, Err: ", res, err2)
+		res := s.GetResource(fullpath)
+		log.Println("ResLoad: ", res, res.Error)
 
 		// TODO - refer to cache if this need to be rebuilt? or let Rebuild do it?
 		foundResources = append(foundResources, res)
@@ -167,45 +222,60 @@ func (s *Site) Load() {
 	})
 
 	s.Rebuild(foundResources)
+	return s
 }
 
-func (s *Site) GetContentProcessor(rs *Resource) ContentProcessor {
-
-	// normal file
-	// check type and call appropriate processor
-	// Should we call processor directly here or collect a list and
-	// pass that to Rebuild with those resources?
-	ext := filepath.Ext(rs.FullPath)
-	log.Println("Name, Ext: ", rs.FullPath, ext)
-	return nil
-}
-
-// When a resource is updated, it has to do a couple of things
+// This is the heart of the build process.   This method is called with a list of resources that
+// have to be reprocessed (either due to periodic updates or change events etc).   Resources in
+// our site form a graph and each resource is processed by a ContentProcessor appropriate for it
+// The content processor can create more resources that may need an update because they are
+// dependant on this resource.   By allowing a list of resources to be processed in a batch
+// it is more efficient to perform batch dependencies instead of doing repeated builds for each
+// change.
 // First get a transitive closure of all resource that depend on it
 // then call the "build" on that resource - which in turn would load
 // all of its dependencies
 // So this is a closure operation on sets of resources each time
 func (s *Site) Rebuild(rs []*Resource) {
-	var errors []error
-	for len(rs) > 0 {
-		nextGenResources := make(map[*Resource]bool)
-		for _, r := range rs {
-			handler := s.GetContentProcessor(r)
-			if handler == nil {
-				log.Println("Processor not found for resource: ", r.FullPath)
-				continue
-			}
-			nextResources, err := handler.Process(r, s)
-			if err != nil {
-				errors = append(errors, err)
-			} else {
-				for _, newr := range nextResources {
-					nextGenResources[newr] = true
-				}
+	// var errors []error
+
+	for _, res := range rs {
+		proc := s.GetContentProcessor(res)
+		if proc == nil {
+			log.Println("Processor not found for resource: ", res.FullPath)
+			continue
+		}
+		outres := s.DestResourceFor(res)
+		if outres != nil {
+			// this is an index page
+			if err := proc.Process(s, res, outres); err != nil {
+				log.Printf("error processing %s: %v", res.FullPath, err)
 			}
 		}
-		rs = gfn.MapKeys(nextGenResources)
 	}
+	/*
+		for len(rs) > 0 {
+			nextGenResources := make(map[*Resource]bool)
+			for _, r := range rs {
+				handler := s.GetContentProcessor(r)
+				if handler == nil {
+					log.Println("Processor not found for resource: ", r.FullPath)
+					continue
+				}
+				nextResources, err := handler.Process(s, r)
+				if err != nil {
+					errors = append(errors, err)
+				} else {
+					for _, newr := range nextResources {
+						nextGenResources[newr] = true
+						// also add it to our map
+						s.resources[newr.FullPath] = newr
+					}
+				}
+			}
+			rs = gfn.MapKeys(nextGenResources)
+		}
+	*/
 }
 
 // /////////////////// ATTIC

@@ -1,14 +1,12 @@
 package core
 
 import (
+	"log"
+	"os"
 	"time"
-)
 
-type ContentProcessor interface {
-	// Called to handle a resource -
-	// This can generate more resources
-	Process(res *Resource, s *Site) ([]*Resource, error)
-}
+	"github.com/adrg/frontmatter"
+)
 
 const (
 	ResourceStatePending = iota
@@ -17,6 +15,12 @@ const (
 	ResourceStateNotFound
 	ResourceStateFailed
 )
+
+type FrontMatter struct {
+	Loaded            bool
+	Data              map[string]any
+	FrontMatterLength uint64
+}
 
 /**
  * Each resource in our static site is identified by a unique path.
@@ -45,6 +49,15 @@ type Resource struct {
 	// If a resource does not depend on any others then this is a root
 	// resource
 	DependsOn map[string]bool
+
+	// Any errors with this resource
+	Error error
+
+	// Info about the resource
+	info os.FileInfo
+
+	// Marks whether front matter was loaded
+	frontMatter FrontMatter
 }
 
 // A ResourceBundle is a collection of resources all nested under a single
@@ -62,7 +75,7 @@ type ResourceBundle struct {
 // Loads a resource and validates it.   Note that a resources may not
 // necessarily be in memory just because it is loaded.  Just a Resource
 // pointer is kept and it can be streamed etc
-func (s *Site) LoadResource(fullpath string) (*Resource, error) {
+func (s *Site) GetResource(fullpath string) *Resource {
 	res, found := s.resources[fullpath]
 	if res == nil || !found {
 		res = &Resource{
@@ -73,5 +86,30 @@ func (s *Site) LoadResource(fullpath string) (*Resource, error) {
 		}
 		s.resources[fullpath] = res
 	}
-	return res, nil
+	return res
+}
+
+func (r *Resource) Info() os.FileInfo {
+	if r.info == nil {
+		r.info, r.Error = os.Stat(r.FullPath)
+		r.State = ResourceStateFailed
+	}
+	return r.info
+}
+
+func (r *Resource) FrontMatter() *FrontMatter {
+	if !r.frontMatter.Loaded {
+		f, err := os.Open(r.FullPath)
+		if err != nil {
+			r.Error = err
+			r.State = ResourceStateFailed
+		}
+		rest, err := frontmatter.Parse(f, r.frontMatter.Data)
+		log.Println("Rest: ", rest)
+		if err != nil {
+			r.Error = err
+			r.State = ResourceStateFailed
+		}
+	}
+	return &r.frontMatter
 }

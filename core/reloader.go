@@ -47,11 +47,8 @@ func (s *Site) StartWatching() {
 
 					// only deal with files
 					if !info.IsDir() && (s.IgnoreFileFunc == nil || !s.IgnoreFileFunc(fullpath)) {
-						res, err2 := s.LoadResource(fullpath)
-						if err2 != nil {
-							log.Println("ResLoad, Err: ", res, err2)
-						} else {
-
+						res := s.GetResource(fullpath)
+						if res != nil {
 							// map fullpath to a resource here
 
 							// TODO - refer to cache if this need to be rebuilt? or let Rebuild do it?
