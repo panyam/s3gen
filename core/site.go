@@ -2,13 +2,18 @@ package core
 
 import (
 	"fmt"
-	"io/fs"
+	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+
+	htmpl "html/template"
+	ttmpl "text/template"
 
 	"github.com/gorilla/mux"
 	gut "github.com/panyam/goutils/utils"
@@ -16,14 +21,6 @@ import (
 )
 
 var ErrContentPathInvalid = fmt.Errorf("Invalid content path")
-
-type ContentProcessor interface {
-	// Called to handle a resource -
-	// This can generate more resources
-	IsIndex(s *Site, res *Resource) bool
-	NeedsIndex(s *Site, res *Resource) bool
-	Process(s *Site, inres *Resource, outres *Resource) error
-}
 
 // Our static site type that holds metadata about all input directories
 // output directories, implicit/explict routes, templates, etc
@@ -87,6 +84,14 @@ type Site struct {
 
 	BuildFrequency time.Duration
 
+	// Global templates dirs
+	HtmlTemplate  *htmpl.Template
+	TextTemplate  *ttmpl.Template
+	HtmlTemplates []string
+	TextTemplates []string
+
+	SiteMetadata any
+
 	// All files including published files will be served from here!
 	filesRouter *mux.Router
 
@@ -101,6 +106,31 @@ type Site struct {
 func (s *Site) Init() *Site {
 	s.ContentRoot = gut.ExpandUserPath(s.ContentRoot)
 	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
+	if s.HtmlTemplate == nil {
+		s.HtmlTemplate = htmpl.New("SiteHtmlTemplate").Funcs(DefaultFuncMap(s))
+		for _, templatesDir := range s.HtmlTemplates {
+			log.Println("Loaded HTML Template: ", templatesDir)
+			t, err := s.HtmlTemplate.ParseGlob(templatesDir)
+			if err != nil {
+				log.Println("Error parsing templates glob: ", templatesDir, err)
+			} else {
+				s.HtmlTemplate = t
+				log.Println("Loaded HTML Templates: ", templatesDir)
+			}
+		}
+	}
+	if s.TextTemplate == nil {
+		s.TextTemplate = ttmpl.New("SiteTextTemplate").Funcs(DefaultFuncMap(s))
+		for _, templatesDir := range s.TextTemplates {
+			t, err := s.TextTemplate.ParseGlob(templatesDir)
+			if err != nil {
+				log.Println("Error parsing templates glob: ", templatesDir)
+			} else {
+				s.TextTemplate = t
+				log.Println("Loaded Text Templates")
+			}
+		}
+	}
 	if s.resources == nil {
 		s.resources = make(map[string]*Resource)
 	}
@@ -126,23 +156,12 @@ func (s *Site) GetRouter() *mux.Router {
 		fileServer := http.FileServer(http.Dir(s.OutputDir))
 		realHandler := http.StripPrefix("/", fileServer)
 		if s.LazyLoad {
-			/*
-				x := s.filesRouter
-				x.PathPrefix("").Subrouter().Use(func(next http.Handler) http.Handler {
-					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						log.Println("Doing some decorator: ", r.URL.Path)
-						next.ServeHTTP(w, r)
-					})
-				})
-				// s.filesRouter.PathPrefix("/")
-				x.Handle("/", realHandler)
-			*/
 			x := s.filesRouter.PathPrefix("/")
 			x.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				log.Println("Ensuring path is built: ", r.URL.Path, "Site Prefix: ", s.PathPrefix)
 
-				srcRes := s.urlPathToFilePath(r.URL.Path)
-				log.Println("Source Resource: ", srcRes)
+				// srcRes := s.urlPathToFilePath(r.URL.Path)
+				// log.Println("Source Resource: ", srcRes)
 				// What should happen here?
 				realHandler.ServeHTTP(w, r)
 			}))
@@ -176,8 +195,8 @@ func (s *Site) filePathToUrlPath(filePath string) string {
 // For now we assume only one of these files exist and it is upto
 // the page oragnizer to pick this.  An exception for this is if we want things like
 func (s *Site) urlPathToFilePath(urlPath string) *Resource {
-	cand := filepath.Join(s.ContentRoot, urlPath)
-	log.Println("Cand: ", cand)
+	// cand := filepath.Join(s.ContentRoot, urlPath)
+	// log.Println("Cand: ", cand)
 	// if cand is directory - see if cand/<index_html> exists
 	return nil
 }
@@ -195,6 +214,14 @@ func (s *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Walks through all our resources and rebuilds/republishes the static site
 func (s *Site) Load() *Site {
+	foundResources := s.ListResources(nil, nil, 0, 0)
+	s.Rebuild(foundResources)
+	return s
+}
+
+func (s *Site) ListResources(filterFunc func(res *Resource) bool,
+	sortFunc func(a *Resource, b *Resource) bool,
+	offset int, count int) []*Resource {
 	var foundResources []*Resource
 	// keep a map of files encountered and their statuses
 	filepath.WalkDir(s.ContentRoot, func(fullpath string, info os.DirEntry, err error) error {
@@ -215,21 +242,33 @@ func (s *Site) Load() *Site {
 			return nil
 		}
 
-		if s.IgnoreFileFunc != nil && s.IgnoreFileFunc(fullpath) {
+		if filterFunc == nil && s.IgnoreFileFunc != nil && s.IgnoreFileFunc(fullpath) {
 			return nil
 		}
 
 		// map fullpath to a resource here
 		res := s.GetResource(fullpath)
 
-		// TODO - refer to cache if this need to be rebuilt? or let Rebuild do it?
-		foundResources = append(foundResources, res)
+		if filterFunc == nil || filterFunc(res) {
+			foundResources = append(foundResources, res)
+		}
 
 		return nil
 	})
-
-	s.Rebuild(foundResources)
-	return s
+	if sortFunc != nil {
+		sort.Slice(foundResources, func(idx1, idx2 int) bool {
+			ent1 := foundResources[idx1]
+			ent2 := foundResources[idx2]
+			return sortFunc(ent1, ent2)
+		})
+	}
+	if offset > 0 {
+		foundResources = foundResources[offset:]
+	}
+	if count > 0 {
+		foundResources = foundResources[:count]
+	}
+	return foundResources
 }
 
 // This is the heart of the build process.   This method is called with a list of resources that
@@ -249,40 +288,86 @@ func (s *Site) Rebuild(rs []*Resource) {
 	for _, res := range rs {
 		proc := s.GetContentProcessor(res)
 		if proc == nil {
-			log.Println("Processor not found for resource: ", res.FullPath)
+			// log.Println("Processor not found for resource: ", res.FullPath)
 			continue
 		}
 		outres := s.DestResourceFor(res)
 		if outres != nil {
 			// this is an index page
-			if err := proc.Process(s, res, outres); err != nil {
-				log.Printf("error processing %s: %v", res.FullPath, err)
+			outres.EnsureDir()
+			outfile, err := os.Create(outres.FullPath)
+			if err != nil {
+				log.Println("Error writing to: ", outres.FullPath, err)
+				continue
 			}
+			defer outfile.Close()
+
+			page := s.NewPage(res)
+			proc.PopulatePage(res, page)
+			// After the page is populate, initialise it
+			if page != nil {
+				page.RootView.InitContext(s, nil)
+			}
+
+			// w.WriteHeader(http.StatusOK)
+			err = s.RenderView(outfile, page.RootView, "")
+			if err != nil {
+				slog.Error("Render Error: ", "err", err)
+				// c.Abort()
+			}
+
+			// What should the build pipeline here be?
+			// P = Page from Res(Site = S, Res = R, RootView = Base page for R)
+			// P.Data = get/load static content for this page - custom?
+			//				  eg page list, tag list, author list, others
+			// L = Pick a layout: say via layout
+			// R = RenderedResource(R, Site, P) into layout (raw html)
+			// Set R into B (where every applicable)
+			// Render(B, outfile)
+			//
+			// Fill values for the basepage - including where ever the po
+			// render the base
+			// log.Println("Processing: ", res.FullPath, "------>", outres.FullPath)
+			// if err := proc.Process(s, res, outfile); err != nil { log.Printf("error processing %s: %v", res.FullPath, err) }
 		}
 	}
-	/*
-		for len(rs) > 0 {
-			nextGenResources := make(map[*Resource]bool)
-			for _, r := range rs {
-				handler := s.GetContentProcessor(r)
-				if handler == nil {
-					log.Println("Processor not found for resource: ", r.FullPath)
-					continue
-				}
-				nextResources, err := handler.Process(s, r)
-				if err != nil {
-					errors = append(errors, err)
-				} else {
-					for _, newr := range nextResources {
-						nextGenResources[newr] = true
-						// also add it to our map
-						s.resources[newr.FullPath] = newr
-					}
-				}
-			}
-			rs = gfn.MapKeys(nextGenResources)
+}
+
+// Site extension to render a view
+func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
+	if templateName != "" {
+		return s.HtmlTemplate.ExecuteTemplate(writer, templateName, v)
+	}
+
+	templateName = v.TemplateName()
+	if templateName != "" {
+		return s.HtmlTemplate.ExecuteTemplate(writer, templateName, v)
+	}
+	return v.RenderResponse(writer)
+}
+
+func (s *Site) NewView(name string) (view View) {
+	// TODO - register by caller or have defaults instead of hard coding
+	// Leading to themes
+	if name == "BasePage" || name == "" {
+		out := &BasePage{}
+		out.Template = "BasePage.html"
+		return out
+	}
+	return nil
+}
+
+func (s *Site) NewPage(res *Resource) (page *Page) {
+	if res.IsDir() {
+		page = &Page{Site: s}
+		page.RootView = &BaseListPage{}
+	} else {
+		if res.Ext() == ".md" || res.Ext() == ".mdx" {
+			page = &Page{Site: s}
+			page.RootView = &BasePage{}
 		}
-	*/
+	}
+	return page
 }
 
 func (s *Site) DestResourceFor(res *Resource) *Resource {
@@ -318,7 +403,6 @@ func (s *Site) DestResourceFor(res *Resource) *Resource {
 		// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
 		// can use that for language sites
 		destpath = filepath.Join(s.OutputDir, rem, "index.html")
-		log.Println("ResP: ", respath, "Remaining: ", rem)
 	} else {
 		// basic static file - so copy as is
 		destpath = filepath.Join(s.OutputDir, respath)
@@ -341,7 +425,7 @@ func (s *Site) GetContentProcessor(rs *Resource) ContentProcessor {
 	if ext == ".html" || ext == ".htm" {
 		return &HTMLContentProcessor{}
 	}
-	log.Println("Could not find proc for, Name, Ext: ", rs.FullPath, ext)
+	// log.Println("Could not find proc for, Name, Ext: ", rs.FullPath, ext)
 	return nil
 }
 
@@ -366,30 +450,4 @@ func (s *Site) PathToDir(path string) (string, bool, error) {
 		}
 	}
 	return filepath.Join(startingDir...), true, nil
-}
-
-func (s *Site) ServeFile(w http.ResponseWriter, r *http.Request, realPath string, file fs.FileInfo) {
-	// TODO
-	// 1. get type
-	// 2. get content processor
-	// 3. Kick off compilation and serve
-}
-
-func (s *Site) ServeDir(w http.ResponseWriter, r *http.Request, realPath string, file fs.FileInfo) {
-	// TODO
-	// 1. look for index html/md/mdx/htm/etc - if it exists
-	// 2. if it - then ServeFile it with above func
-	// 3. else - see if there is a "handler" in code for it and call it
-	// 4. otherwise see if we have a default handler for "listing" types - then call it
-	// 5. else 404
-	// for _, idx := range s.IndexFileNames { }
-}
-
-func (s *Site) ServeError(w http.ResponseWriter, r *http.Request, err error) {
-	if os.IsNotExist(err) {
-		http.Error(w, "Not Found", http.StatusNotFound)
-	} else {
-		log.Println("Internal error: ", err)
-		http.Error(w, "Internal Error", http.StatusInternalServerError)
-	}
 }

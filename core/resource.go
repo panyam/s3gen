@@ -24,6 +24,42 @@ type FrontMatter struct {
 	Length int64
 }
 
+type ContentProcessor interface {
+	// Called to handle a resource -
+	// This can generate more resources
+	IsIndex(s *Site, res *Resource) bool
+	NeedsIndex(s *Site, res *Resource) bool
+	PopulatePage(res *Resource, page *Page) error
+	Process(s *Site, inres *Resource, writer io.Writer) error
+}
+
+// Our interface for returning all static content in our site
+type ResourceService interface {
+	GetResource(fullpath string) *Resource
+	ListResources(filterFunc func(res *Resource) bool,
+		sortFunc func(a *Resource, b *Resource) bool,
+		offset int, count int) []*Resource
+}
+
+// A page in our site.  These are what are finally rendered.
+type Page struct {
+	// The slug url for this page
+	Slug string
+
+	Site *Site
+
+	// The resource that corresponds to this page
+	// TODO - Should this be just the root resource or all resources for it?
+	Content *Resource
+
+	// Tells whether this is a detail page or a listing page
+	IsListPage bool
+
+	// The root view that corresponds to this page
+	// By default - we use the BasePage view
+	RootView View
+}
+
 /**
  * Each resource in our static site is identified by a unique path.
  * Note that resources can go through multiple transformations
@@ -114,6 +150,16 @@ func (r *Resource) Info() os.FileInfo {
 	return r.info
 }
 
+// Read all the content bytes after the front-matter in this file.
+func (r *Resource) ReadAll() ([]byte, error) {
+	reader, err := r.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
 // Loads the front matter for a resource if it exists
 func (r *Resource) Reader() (io.ReadCloser, error) {
 	// Read the content
@@ -125,6 +171,14 @@ func (r *Resource) Reader() (io.ReadCloser, error) {
 	}
 	fi.Seek(r.frontMatter.Length, 0)
 	return fi, nil
+}
+
+func (r *Resource) IsDir() bool {
+	return false
+}
+
+func (r *Resource) Ext() string {
+	return filepath.Ext(r.FullPath)
 }
 
 func (r *Resource) FrontMatter() *FrontMatter {

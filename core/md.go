@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	ttmpl "text/template"
@@ -22,22 +21,17 @@ type MDContentProcessor struct {
 
 func NewMDContentProcessor(templatesDir string) *MDContentProcessor {
 	h := &MDContentProcessor{}
-	t := ttmpl.New("hello").Funcs(DefaultFuncMap())
-	// Funcs(CustomFuncMap()).
-	if t != nil && templatesDir != "" {
-		var err error
-		t, err = t.ParseGlob(templatesDir)
+	h.Template = ttmpl.New("hello")
+	if templatesDir != "" {
+		// Funcs(CustomFuncMap()).
+		t, err := h.Template.ParseGlob(templatesDir)
 		if err != nil {
-			log.Println("Error parsing templates: ", err)
+			log.Println("Error loading dir: ", templatesDir, err)
+		} else {
+			h.Template = t
 		}
 	}
-	h.Template = t
 	return h
-}
-
-// Returns a list of output resources that depend on this resource
-func (m *MDContentProcessor) NeedsIndex(s *Site, res *Resource) bool {
-	return strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx")
 }
 
 func (m *MDContentProcessor) IsIndex(s *Site, res *Resource) bool {
@@ -45,14 +39,37 @@ func (m *MDContentProcessor) IsIndex(s *Site, res *Resource) bool {
 	return base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
 }
 
-func (m *MDContentProcessor) Process(s *Site, inres *Resource, outres *Resource) error {
-	log.Println("MD Processing: ", inres.FullPath, "------>", outres.FullPath)
-	log.Println("FrontMatter: ", inres.FrontMatter())
-	mdfile, _ := inres.Reader()
-	defer mdfile.Close()
+// Returns a list of output resources that depend on this resource
+func (m *MDContentProcessor) NeedsIndex(s *Site, res *Resource) bool {
+	return strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx")
+}
 
+// Idea is the resource may have a lot of information on how it should be rendered
+// Given a page we want to identify what page properties should be set from here
+// so when page is finally rendered it is all uptodate
+func (m *MDContentProcessor) PopulatePage(res *Resource, page *Page) error {
+	site := page.Site
+	frontMatter := res.FrontMatter().Data
+	pageName := ""
+	if frontMatter["page"] != nil {
+		pageName = frontMatter["page"].(string)
+	}
+	page.RootView = site.NewView(pageName)
+
+	location := "BodyView"
+	if frontMatter["location"] != nil {
+		location = frontMatter["location"].(string)
+	}
+
+	mdview := &MDView{Res: res}
+	SetViewProp(page.RootView, mdview, location)
+	return nil
+}
+
+func (m *MDContentProcessor) Process(s *Site, res *Resource, writer io.Writer) error {
+	mdfile, _ := res.Reader()
 	mddata, _ := io.ReadAll(mdfile)
-	outres.EnsureDir()
+	defer mdfile.Close()
 
 	mdTemplate, err := m.Template.Parse(string(mddata))
 	if err != nil {
@@ -61,9 +78,13 @@ func (m *MDContentProcessor) Process(s *Site, inres *Resource, outres *Resource)
 	}
 
 	finalmd := bytes.NewBufferString("")
-	mdTemplate.Execute(finalmd, gut.StringMap{
-		"Page": inres.FrontMatter,
+	err = mdTemplate.Execute(finalmd, gut.StringMap{
+		"Site": s,
+		"Page": res.FrontMatter,
 	})
+	if err != nil {
+		log.Println("Error executing MD: ", err)
+	}
 
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
@@ -81,16 +102,29 @@ func (m *MDContentProcessor) Process(s *Site, inres *Resource, outres *Resource)
 		return err
 	}
 
-	// How to load template?
-
-	// we have the final "md" here - now we parse MD and arite *that* to outfile
-	outfile, err := os.Create(outres.FullPath)
-	if err != nil {
-		log.Println("Error writing to: ", outres.FullPath, err)
-		return err
+	// Now load the layout
+	frontMatter := res.FrontMatter()
+	layoutName := ""
+	if frontMatter != nil && frontMatter.Data != nil {
+		if frontMatter.Data["layout"] != "" {
+			if layout, ok := frontMatter.Data["layout"].(string); ok {
+				layoutName = layout
+			}
+		}
 	}
-	log.Println("Writing to: ", outres.FullPath)
-	defer outfile.Close()
-	outfile.Write(buf.Bytes())
+	if layoutName == "" { // If we dont have a layout name then render as is
+		writer.Write(buf.Bytes())
+	} else {
+		// out2 := bytes.NewBufferString("")
+		err = s.HtmlTemplate.ExecuteTemplate(writer, layoutName, map[string]any{
+			"Content":      string(buf.Bytes()),
+			"SiteMetadata": s.SiteMetadata,
+			"PrevPost":     nil,
+			"NextPost":     nil,
+			"Post": map[string]any{
+				"Slug": "testslug",
+			},
+		})
+	}
 	return nil
 }
