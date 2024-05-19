@@ -148,11 +148,11 @@ type MDView struct {
 	Res *Resource
 }
 
-func (v *MDView) InitContext(site *Site, parentView View) {
+func (v *MDView) InitView(site *Site, parentView View) {
 	if v.Self == nil {
 		v.Self = v
 	}
-	v.BaseView.InitContext(site, parentView)
+	v.BaseView.InitView(site, parentView)
 }
 
 func (v *MDView) RenderResponse(writer io.Writer) (err error) {

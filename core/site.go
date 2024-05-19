@@ -317,7 +317,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 					log.Println("error populating page: ", err)
 				} else {
 					// After the page is populate, initialise it
-					page.RootView.InitContext(s, nil)
+					page.RootView.InitView(s, nil)
 
 					// w.WriteHeader(http.StatusOK)
 					err = s.RenderView(outfile, page.RootView, "")

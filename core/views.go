@@ -11,7 +11,7 @@ import (
 )
 
 type View interface {
-	InitContext(site *Site, parentView View)
+	InitView(site *Site, parentView View)
 	ValidateRequest(w http.ResponseWriter, r *http.Request) error
 	RenderResponse(writer io.Writer) (err error)
 	TemplateName() string
@@ -25,6 +25,26 @@ type PageView interface {
 	View
 	GetPage() *Page
 	SetPage(*Page)
+}
+
+type BasePageView struct {
+	BaseView
+	Page *Page
+}
+
+func (v *BasePageView) InitView(s *Site, pv View) {
+	if v.Self == nil {
+		v.Self = v
+	}
+	v.BaseView.InitView(s, pv)
+}
+
+func (v *BasePageView) GetPage() *Page {
+	return v.Page
+}
+
+func (v *BasePageView) SetPage(p *Page) {
+	v.Page = p
 }
 
 func SetViewProp(obj any, value any, fieldpath string) error {
@@ -84,7 +104,7 @@ func (v *BaseView) TemplateName() string {
 	return v.Template
 }
 
-func (v *BaseView) InitContext(s *Site, parent View) {
+func (v *BaseView) InitView(s *Site, parent View) {
 	v.Site = s
 	v.Parent = parent
 	if v.Children != nil {
@@ -92,7 +112,7 @@ func (v *BaseView) InitContext(s *Site, parent View) {
 			if child == nil {
 				// log.Println("Child is nil, idx: ", idx)
 			} else {
-				child.InitContext(s, v)
+				child.InitView(s, v)
 			}
 		}
 	}
