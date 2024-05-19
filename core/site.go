@@ -80,6 +80,8 @@ type Site struct {
 	IgnoreDirFunc  func(dirpath string) bool
 	IgnoreFileFunc func(filepath string) bool
 
+	NewPageViewFunc func(name string) PageView
+
 	StaticFolders []string
 
 	BuildFrequency time.Duration
@@ -109,13 +111,13 @@ func (s *Site) Init() *Site {
 	if s.HtmlTemplate == nil {
 		s.HtmlTemplate = htmpl.New("SiteHtmlTemplate").Funcs(DefaultFuncMap(s))
 		for _, templatesDir := range s.HtmlTemplates {
-			log.Println("Loaded HTML Template: ", templatesDir)
+			slog.Info("Loaded HTML Template: ", "templatesDir", templatesDir)
 			t, err := s.HtmlTemplate.ParseGlob(templatesDir)
 			if err != nil {
-				log.Println("Error parsing templates glob: ", templatesDir, err)
+				slog.Error("Error parsing templates glob: ", "templatesDir", templatesDir, "error", err)
 			} else {
 				s.HtmlTemplate = t
-				log.Println("Loaded HTML Templates: ", templatesDir)
+				slog.Info("Loaded HTML Template: ", "templatesDir", templatesDir)
 			}
 		}
 	}
@@ -302,18 +304,28 @@ func (s *Site) Rebuild(rs []*Resource) {
 			}
 			defer outfile.Close()
 
-			page := s.NewPage(res)
-			proc.PopulatePage(res, page)
-			// After the page is populate, initialise it
-			if page != nil {
-				page.RootView.InitContext(s, nil)
+			if !strings.HasSuffix(res.FullPath, "grpc-interceptors.mdx") {
+				continue
 			}
 
-			// w.WriteHeader(http.StatusOK)
-			err = s.RenderView(outfile, page.RootView, "")
-			if err != nil {
-				slog.Error("Render Error: ", "err", err)
-				// c.Abort()
+			page := s.NewPage(res)
+			if page == nil {
+				slog.Warn("Could not create page for resource: ", "res", res)
+			} else {
+				err = proc.PopulatePage(res, page)
+				if err != nil {
+					log.Println("error populating page: ", err)
+				} else {
+					// After the page is populate, initialise it
+					page.RootView.InitContext(s, nil)
+
+					// w.WriteHeader(http.StatusOK)
+					err = s.RenderView(outfile, page.RootView, "")
+					if err != nil {
+						slog.Error("Render Error: ", "err", err)
+						// c.Abort()
+					}
+				}
 			}
 
 			// What should the build pipeline here be?
@@ -346,13 +358,11 @@ func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
 	return v.RenderResponse(writer)
 }
 
-func (s *Site) NewView(name string) (view View) {
+func (s *Site) NewPageView(name string) (view PageView) {
 	// TODO - register by caller or have defaults instead of hard coding
 	// Leading to themes
-	if name == "BasePage" || name == "" {
-		out := &BasePage{}
-		out.Template = "BasePage.html"
-		return out
+	if s.NewPageViewFunc != nil {
+		return s.NewPageViewFunc(name)
 	}
 	return nil
 }
@@ -360,14 +370,12 @@ func (s *Site) NewView(name string) (view View) {
 func (s *Site) NewPage(res *Resource) (page *Page) {
 	if res.IsDir() {
 		page = &Page{Site: s}
-		page.RootView = &BaseListPage{}
 	} else {
 		if res.Ext() == ".md" || res.Ext() == ".mdx" {
 			page = &Page{Site: s}
-			page.RootView = &BasePage{}
 		}
 	}
-	return page
+	return
 }
 
 func (s *Site) DestResourceFor(res *Resource) *Resource {

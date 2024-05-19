@@ -46,6 +46,12 @@ type Page struct {
 	// The slug url for this page
 	Slug string
 
+	Title string
+
+	Description string
+
+	CanonicalUrl string
+
 	Site *Site
 
 	// The resource that corresponds to this page
@@ -57,7 +63,7 @@ type Page struct {
 
 	// The root view that corresponds to this page
 	// By default - we use the BasePage view
-	RootView View
+	RootView PageView
 }
 
 /**

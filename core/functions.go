@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log"
 	"path/filepath"
+	"reflect"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -28,6 +31,8 @@ func DefaultFuncMap(s *Site) template.FuncMap {
 			return template.URL(s)
 		},
 
+		"TypeOf": reflect.TypeOf,
+
 		"expandAttrs": func(attrs map[string]any) template.JS {
 			out := " "
 			if attrs != nil {
@@ -47,9 +52,28 @@ func DefaultFuncMap(s *Site) template.FuncMap {
 			return template.HTML(out.String()), err
 		},
 
-		"RenderView": func(view View) (template.HTML, error) {
+		"RenderView": func(view View) (out template.HTML, err error) {
+			if view == nil {
+				return "", fmt.Errorf("view is nil")
+			} else {
+				// log.Println("Rendering View: ", view, reflect.TypeOf(view))
+			}
+			defer func() {
+				if false {
+					return
+				}
+				if r := recover(); r != nil {
+					log.Println("========================================================")
+					debug.PrintStack()
+					if e, ok := r.(error); ok {
+						err = e
+					} else {
+						err = fmt.Errorf("%v", r)
+					}
+				}
+			}()
 			output := bytes.NewBufferString("")
-			err := view.RenderResponse(output)
+			err = view.RenderResponse(output)
 			return template.HTML(output.String()), err
 		},
 

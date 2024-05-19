@@ -1,28 +1,34 @@
 package core
 
 import (
-	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"reflect"
 
 	"github.com/morrisxyang/xreflect"
-	gut "github.com/panyam/goutils/utils"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
 )
 
 type View interface {
-	InitContext(*Site, View)
+	InitContext(site *Site, parentView View)
 	ValidateRequest(w http.ResponseWriter, r *http.Request) error
 	RenderResponse(writer io.Writer) (err error)
 	TemplateName() string
+	ParentView() View
+	AddChildViews(views ...View)
+	ChildViews() []View
+	SelfView() View
+}
+
+type PageView interface {
+	View
+	GetPage() *Page
+	SetPage(*Page)
 }
 
 func SetViewProp(obj any, value any, fieldpath string) error {
-	xreflect.SetEmbedField(obj, fieldpath, value)
+	return xreflect.SetEmbedField(obj, fieldpath, value)
 	/*
 			var prev reflect.Value
 			curr := reflect.ValueOf(view)
@@ -48,7 +54,6 @@ func SetViewProp(obj any, value any, fieldpath string) error {
 			}
 		log.Println("end of loop, curr: ", prev, curr, view, fieldpath)
 	*/
-	return nil
 }
 
 func GetViewProp(view View, fieldpath ...any) any {
@@ -60,6 +65,19 @@ type BaseView struct {
 	Site     *Site
 	Template string
 	Children []View
+	Self     View
+}
+
+func (v *BaseView) SelfView() View {
+	return v.Self
+}
+
+func (v *BaseView) ParentView() View {
+	return v.Parent
+}
+
+func (v *BaseView) ChildViews() []View {
+	return v.Children
 }
 
 func (v *BaseView) TemplateName() string {
@@ -71,7 +89,11 @@ func (v *BaseView) InitContext(s *Site, parent View) {
 	v.Parent = parent
 	if v.Children != nil {
 		for _, child := range v.Children {
-			child.InitContext(s, v)
+			if child == nil {
+				// log.Println("Child is nil, idx: ", idx)
+			} else {
+				child.InitContext(s, v)
+			}
 		}
 	}
 }
@@ -93,82 +115,24 @@ func (v *BaseView) AddChildViews(views ...View) {
 }
 
 func (v *BaseView) RenderResponse(writer io.Writer) (err error) {
-	if v.Template == "" {
-		_, err = writer.Write([]byte("TemplateName not provided"))
+	t := reflect.TypeOf(v.Self)
+	e := t.Elem()
+	log.Println("T: ", t, t.Kind())
+	// log.Println("E: ", e, "Kind: ", e.Kind(), "Name: ", e.Name(), "PkgPath: ", e.PkgPath())
+	if v.TemplateName() == "" {
+		// use the type here
+		err := v.Site.HtmlTemplate.ExecuteTemplate(writer, e.Name(), v.Self)
+		if err != nil {
+			log.Println("Error with e.Name(), Error: ", e.Name(), err)
+			// try with the .html name
+			err = v.Site.HtmlTemplate.ExecuteTemplate(writer, e.Name()+".html", v.Self)
+		}
+		if err != nil {
+			log.Println("Error with e.Name().html, Error: ", e.Name(), err)
+			_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
+		}
 	} else {
-		return v.Site.HtmlTemplate.ExecuteTemplate(writer, v.Template, v)
+		return v.Site.HtmlTemplate.ExecuteTemplate(writer, v.TemplateName(), v.Self)
 	}
 	return
-}
-
-// A view that renders a Markdown
-type MDView struct {
-	BaseView
-
-	// Actual resource to render
-	Res *Resource
-}
-
-func (v *MDView) RenderResponse(writer io.Writer) (err error) {
-	res := v.Res
-	mdfile, _ := res.Reader()
-	mddata, _ := io.ReadAll(mdfile)
-	defer mdfile.Close()
-
-	mdTemplate, err := v.Site.TextTemplate.Parse(string(mddata))
-	if err != nil {
-		log.Println("Template Parse Error: ", err)
-		return err
-	}
-
-	finalmd := bytes.NewBufferString("")
-	err = mdTemplate.Execute(finalmd, gut.StringMap{
-		"Site": v.Site,
-		"Page": res.FrontMatter,
-	})
-	if err != nil {
-		log.Println("Error executing MD: ", err)
-	}
-
-	md := goldmark.New(
-		goldmark.WithExtensions(extension.GFM),
-		goldmark.WithParserOptions(
-			parser.WithAutoHeadingID(),
-		),
-		goldmark.WithRendererOptions(
-			html.WithHardWraps(),
-			html.WithXHTML(),
-		),
-	)
-	var buf bytes.Buffer
-	if err := md.Convert(finalmd.Bytes(), &buf); err != nil {
-		log.Println("error converting md: ", err)
-		return err
-	}
-
-	// Now load the layout
-	frontMatter := res.FrontMatter()
-	layoutName := ""
-	if frontMatter != nil && frontMatter.Data != nil {
-		if frontMatter.Data["layout"] != "" {
-			if layout, ok := frontMatter.Data["layout"].(string); ok {
-				layoutName = layout
-			}
-		}
-	}
-	if layoutName == "" { // If we dont have a layout name then render as is
-		writer.Write(buf.Bytes())
-	} else {
-		// out2 := bytes.NewBufferString("")
-		err = v.Site.HtmlTemplate.ExecuteTemplate(writer, layoutName, map[string]any{
-			"Content":      string(buf.Bytes()),
-			"SiteMetadata": v.Site.SiteMetadata,
-			"PrevPost":     nil,
-			"NextPost":     nil,
-			"Post": map[string]any{
-				"Slug": "testslug",
-			},
-		})
-	}
-	return err
 }
