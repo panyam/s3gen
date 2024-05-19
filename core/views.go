@@ -115,11 +115,11 @@ func (v *BaseView) AddChildViews(views ...View) {
 }
 
 func (v *BaseView) RenderResponse(writer io.Writer) (err error) {
-	t := reflect.TypeOf(v.Self)
-	e := t.Elem()
-	log.Println("T: ", t, t.Kind())
+	// log.Println("T: ", t, t.Kind())
 	// log.Println("E: ", e, "Kind: ", e.Kind(), "Name: ", e.Name(), "PkgPath: ", e.PkgPath())
 	if v.TemplateName() == "" {
+		t := reflect.TypeOf(v.Self)
+		e := t.Elem()
 		// use the type here
 		err := v.Site.HtmlTemplate.ExecuteTemplate(writer, e.Name(), v.Self)
 		if err != nil {
