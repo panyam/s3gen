@@ -57,7 +57,7 @@ func (m *MDContentProcessor) Process(s *Site, res *Resource, writer io.Writer) e
 	}
 
 	finalmd := bytes.NewBufferString("")
-	err = mdTemplate.Execute(finalmd, gut.StringMap{
+	err = mdTemplate.Execute(finalmd, gut.StrMap{
 		"Site": s,
 		"Page": res.FrontMatter,
 	})
@@ -168,7 +168,7 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 	}
 
 	finalmd := bytes.NewBufferString("")
-	err = mdTemplate.Execute(finalmd, gut.StringMap{
+	err = mdTemplate.Execute(finalmd, gut.StrMap{
 		"Site": v.Site,
 		"Page": res.FrontMatter,
 	})

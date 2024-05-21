@@ -6,7 +6,7 @@ require (
 	github.com/adrg/frontmatter v0.2.0
 	github.com/gorilla/mux v1.8.1
 	github.com/morrisxyang/xreflect v0.0.0-20231001053442-6df0df9858ba
-	github.com/panyam/goutils v0.0.97
+	github.com/panyam/goutils v0.0.98
 	github.com/radovskyb/watcher v1.0.7
 	github.com/yuin/goldmark v1.7.1
 )
