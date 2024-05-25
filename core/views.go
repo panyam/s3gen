@@ -19,32 +19,8 @@ type View interface {
 	AddChildViews(views ...View)
 	ChildViews() []View
 	SelfView() View
-}
-
-type PageView interface {
-	View
-	GetPage() *Page
-	SetPage(*Page)
-}
-
-type BasePageView struct {
-	BaseView
-	Page *Page
-}
-
-func (v *BasePageView) InitView(s *Site, pv View) {
-	if v.Self == nil {
-		v.Self = v
-	}
-	v.BaseView.InitView(s, pv)
-}
-
-func (v *BasePageView) GetPage() *Page {
-	return v.Page
-}
-
-func (v *BasePageView) SetPage(p *Page) {
-	v.Page = p
+	GetPage() any
+	SetPage(any)
 }
 
 func SetViewProp(obj any, value any, fieldpath string) error {
@@ -86,6 +62,7 @@ type BaseView struct {
 	Template string
 	Children []View
 	Self     View
+	Page     any
 }
 
 func (v *BaseView) SelfView() View {
@@ -102,6 +79,24 @@ func (v *BaseView) ChildViews() []View {
 
 func (v *BaseView) TemplateName() string {
 	return v.Template
+}
+
+func (v *BaseView) GetPage() any {
+	if v.Page == nil && v.Parent != nil {
+		return v.Parent.GetPage()
+	}
+	return v.Page
+}
+
+func (v *BaseView) SetPage(p any) {
+	v.Page = p
+	if v.Children != nil {
+		for _, child := range v.Children {
+			if child != nil {
+				child.SetPage(p)
+			}
+		}
+	}
 }
 
 func (v *BaseView) InitView(s *Site, parent View) {

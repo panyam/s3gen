@@ -80,7 +80,7 @@ type Site struct {
 	IgnoreDirFunc  func(dirpath string) bool
 	IgnoreFileFunc func(filepath string) bool
 
-	NewPageViewFunc func(name string) PageView
+	NewViewFunc func(name string) View
 
 	StaticFolders []string
 
@@ -196,7 +196,7 @@ func (s *Site) filePathToUrlPath(filePath string) string {
 //
 // For now we assume only one of these files exist and it is upto
 // the page oragnizer to pick this.  An exception for this is if we want things like
-func (s *Site) urlPathToFilePath(urlPath string) *Resource {
+func (s *Site) urlPathToFilePath( /*urlPath*/ string) *Resource {
 	// cand := filepath.Join(s.ContentRoot, urlPath)
 	// log.Println("Cand: ", cand)
 	// if cand is directory - see if cand/<index_html> exists
@@ -304,7 +304,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 			}
 			defer outfile.Close()
 
-			if !strings.HasSuffix(res.FullPath, "grpc-interceptors.mdx") {
+			if false && !strings.HasSuffix(res.FullPath, "grpc-interceptors.mdx") {
 				continue
 			}
 
@@ -312,7 +312,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 			if page == nil {
 				slog.Warn("Could not create page for resource: ", "res", res)
 			} else {
-				err = proc.PopulatePage(res, page)
+				err = proc.LoadPage(res, page)
 				if err != nil {
 					log.Println("error populating page: ", err)
 				} else {
@@ -322,7 +322,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 					// w.WriteHeader(http.StatusOK)
 					err = s.RenderView(outfile, page.RootView, "")
 					if err != nil {
-						slog.Error("Render Error: ", "err", err)
+						slog.Error("Render Error: ", "err", res.FullPath, err)
 						// c.Abort()
 					}
 				}
@@ -358,11 +358,11 @@ func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
 	return v.RenderResponse(writer)
 }
 
-func (s *Site) NewPageView(name string) (view PageView) {
+func (s *Site) NewView(name string) (view View) {
 	// TODO - register by caller or have defaults instead of hard coding
 	// Leading to themes
-	if s.NewPageViewFunc != nil {
-		return s.NewPageViewFunc(name)
+	if s.NewViewFunc != nil {
+		return s.NewViewFunc(name)
 	}
 	return nil
 }

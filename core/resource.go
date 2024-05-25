@@ -29,8 +29,8 @@ type ContentProcessor interface {
 	// This can generate more resources
 	IsIndex(s *Site, res *Resource) bool
 	NeedsIndex(s *Site, res *Resource) bool
-	PopulatePage(res *Resource, page *Page) error
-	Process(s *Site, inres *Resource, writer io.Writer) error
+	LoadPage(res *Resource, page *Page) error
+	// Process(s *Site, inres *Resource, writer io.Writer) error
 }
 
 // Our interface for returning all static content in our site
@@ -48,7 +48,12 @@ type Page struct {
 
 	Title string
 
-	Description string
+	Summary string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	IsDraft bool
 
 	CanonicalUrl string
 
@@ -63,7 +68,13 @@ type Page struct {
 
 	// The root view that corresponds to this page
 	// By default - we use the BasePage view
-	RootView PageView
+	RootView View
+
+	// Next page after this for navigation
+	PrevPage *Page
+
+	// Previous page for navigation
+	NextPage *Page
 }
 
 /**
