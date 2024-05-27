@@ -86,10 +86,15 @@ type Site struct {
 
 	BuildFrequency time.Duration
 
+	CommonFuncMap htmpl.FuncMap
+
 	// Global templates dirs
 	HtmlTemplate  *htmpl.Template
-	TextTemplate  *ttmpl.Template
+	HtmlFuncMap   htmpl.FuncMap
 	HtmlTemplates []string
+
+	TextTemplate  *ttmpl.Template
+	TextFuncMap   ttmpl.FuncMap
 	TextTemplates []string
 
 	SiteMetadata any
@@ -110,6 +115,13 @@ func (s *Site) Init() *Site {
 	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
 	if s.HtmlTemplate == nil {
 		s.HtmlTemplate = htmpl.New("SiteHtmlTemplate").Funcs(DefaultFuncMap(s))
+		if s.CommonFuncMap != nil {
+			s.HtmlTemplate = s.HtmlTemplate.Funcs(s.CommonFuncMap)
+		}
+		if s.HtmlFuncMap != nil {
+			s.HtmlTemplate = s.HtmlTemplate.Funcs(s.HtmlFuncMap)
+		}
+
 		for _, templatesDir := range s.HtmlTemplates {
 			slog.Info("Loaded HTML Template: ", "templatesDir", templatesDir)
 			t, err := s.HtmlTemplate.ParseGlob(templatesDir)
@@ -123,6 +135,12 @@ func (s *Site) Init() *Site {
 	}
 	if s.TextTemplate == nil {
 		s.TextTemplate = ttmpl.New("SiteTextTemplate").Funcs(DefaultFuncMap(s))
+		if s.CommonFuncMap != nil {
+			s.TextTemplate = s.TextTemplate.Funcs(s.CommonFuncMap)
+		}
+		if s.TextFuncMap != nil {
+			s.TextTemplate = s.TextTemplate.Funcs(s.TextFuncMap)
+		}
 		for _, templatesDir := range s.TextTemplates {
 			t, err := s.TextTemplate.ParseGlob(templatesDir)
 			if err != nil {
@@ -304,27 +322,22 @@ func (s *Site) Rebuild(rs []*Resource) {
 			}
 			defer outfile.Close()
 
-			if false && !strings.HasSuffix(res.FullPath, "grpc-interceptors.mdx") {
+			if !strings.HasSuffix(res.FullPath, "index.md") {
 				continue
 			}
 
-			page := s.NewPage(res)
-			if page == nil {
-				slog.Warn("Could not create page for resource: ", "res", res)
+			page, err := s.GetPage(res)
+			if page == nil || err != nil {
+				slog.Warn("Could not create page for resource: ", "res", res, err)
 			} else {
-				err = proc.LoadPage(res, page)
-				if err != nil {
-					log.Println("error populating page: ", err)
-				} else {
-					// After the page is populate, initialise it
-					page.RootView.InitView(s, nil)
+				// After the page is populate, initialise it
+				page.RootView.InitView(s, nil)
 
-					// w.WriteHeader(http.StatusOK)
-					err = s.RenderView(outfile, page.RootView, "")
-					if err != nil {
-						slog.Error("Render Error: ", "err", res.FullPath, err)
-						// c.Abort()
-					}
+				// w.WriteHeader(http.StatusOK)
+				err = s.RenderView(outfile, page.RootView, "")
+				if err != nil {
+					slog.Error("Render Error: ", "err", res.FullPath, err)
+					// c.Abort()
 				}
 			}
 
@@ -367,12 +380,23 @@ func (s *Site) NewView(name string) (view View) {
 	return nil
 }
 
-func (s *Site) NewPage(res *Resource) (page *Page) {
+func (s *Site) GetPage(res *Resource) (page *Page, err error) {
 	if res.IsDir() {
 		page = &Page{Site: s}
 	} else {
 		if res.Ext() == ".md" || res.Ext() == ".mdx" {
 			page = &Page{Site: s}
+		}
+	}
+
+	if page != nil {
+		proc := s.GetContentProcessor(res)
+		if proc != nil {
+			err = proc.LoadPage(res, page)
+			if err != nil {
+				log.Println("error populating page: ", err)
+			} else {
+			}
 		}
 	}
 	return
@@ -435,6 +459,23 @@ func (s *Site) GetContentProcessor(rs *Resource) ContentProcessor {
 	}
 	// log.Println("Could not find proc for, Name, Ext: ", rs.FullPath, ext)
 	return nil
+}
+
+// Loads a resource and validates it.   Note that a resources may not
+// necessarily be in memory just because it is loaded.  Just a Resource
+// pointer is kept and it can be streamed etc
+func (s *Site) GetResource(fullpath string) *Resource {
+	res, found := s.resources[fullpath]
+	if res == nil || !found {
+		res = &Resource{
+			FullPath:  fullpath,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			State:     ResourceStatePending,
+		}
+		s.resources[fullpath] = res
+	}
+	return res
 }
 
 // /////////////////// ATTIC

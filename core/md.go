@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -109,9 +110,39 @@ func (m *MDContentProcessor) NeedsIndex(s *Site, res *Resource) bool {
 // 1. Identify the Page properties (like title, slug etc and any others - may be this can come from FrontMatter?)
 // 2. More importantly - Return the PageView type that can render
 // the resource.
-func (m *MDContentProcessor) LoadPage(res *Resource, page *Page) error {
+func (m *MDContentProcessor) LoadPage(res *Resource, page *Page) (err error) {
 	frontMatter := res.FrontMatter().Data
 	m.LoadPageFromMatter(page, frontMatter)
+
+	// see if we can calculate the slug and link urls
+	site := page.Site
+	page.Slug = ""
+	relpath := ""
+	resdir := res.DirName()
+	if m.IsIndex(site, res) {
+		relpath, err = filepath.Rel(site.ContentRoot, resdir)
+		if err != nil {
+			return err
+		}
+	} else {
+		fp := res.WithoutExt(true)
+		relpath, err = filepath.Rel(site.ContentRoot, fp)
+		if err != nil {
+			return err
+		}
+	}
+	if relpath == "." {
+		relpath = ""
+	}
+	if relpath == "" {
+		relpath = "/"
+	}
+	if relpath[0] == '/' {
+		page.Link = fmt.Sprintf("%s%s", site.PathPrefix, relpath)
+	} else {
+		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
+	}
+	// log.Println("RelPath, Link: ", relpath, page.Link)
 
 	location := "BodyView"
 	if frontMatter["location"] != nil {

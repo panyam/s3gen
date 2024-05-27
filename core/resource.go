@@ -43,10 +43,16 @@ type ResourceService interface {
 
 // A page in our site.  These are what are finally rendered.
 type Page struct {
+	// Site this page belongs to - can this be in multiple - then create different
+	// page instances
+	Site *Site
+
 	// The slug url for this page
 	Slug string
 
 	Title string
+
+	Link string
 
 	Summary string
 
@@ -56,8 +62,6 @@ type Page struct {
 	IsDraft bool
 
 	CanonicalUrl string
-
-	Site *Site
 
 	// The resource that corresponds to this page
 	// TODO - Should this be just the root resource or all resources for it?
@@ -75,6 +79,18 @@ type Page struct {
 
 	// Previous page for navigation
 	NextPage *Page
+}
+
+// A ResourceBundle is a collection of resources all nested under a single
+// root directory.
+type ResourceBundle struct {
+	// Name of this resource bundle
+	Name string
+
+	// Root directory where the resources are nested under.
+	// Not *every* file is implicitly loaded.  To add a resource
+	// in a bundle it has to be Loaded first.
+	RootDir string
 }
 
 /**
@@ -115,35 +131,6 @@ type Resource struct {
 	frontMatter FrontMatter
 }
 
-// A ResourceBundle is a collection of resources all nested under a single
-// root directory.
-type ResourceBundle struct {
-	// Name of this resource bundle
-	Name string
-
-	// Root directory where the resources are nested under.
-	// Not *every* file is implicitly loaded.  To add a resource
-	// in a bundle it has to be Loaded first.
-	RootDir string
-}
-
-// Loads a resource and validates it.   Note that a resources may not
-// necessarily be in memory just because it is loaded.  Just a Resource
-// pointer is kept and it can be streamed etc
-func (s *Site) GetResource(fullpath string) *Resource {
-	res, found := s.resources[fullpath]
-	if res == nil || !found {
-		res = &Resource{
-			FullPath:  fullpath,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			State:     ResourceStatePending,
-		}
-		s.resources[fullpath] = res
-	}
-	return res
-}
-
 func (r *Resource) Reset() {
 	r.State = ResourceStatePending
 	r.info = nil
@@ -157,6 +144,26 @@ func (r *Resource) EnsureDir() {
 	if err := os.MkdirAll(dirname, 0755); err != nil {
 		log.Println("Error creating dir: ", dirname, err)
 	}
+}
+
+func (r *Resource) DirName() string {
+	return filepath.Dir(r.FullPath)
+}
+
+func (r *Resource) WithoutExt(all bool) string {
+	out := r.FullPath
+	for {
+		ext := filepath.Ext(out)
+		if ext == "" {
+			break
+		} else {
+			out = out[:len(out)-len(ext)]
+			if !all {
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (r *Resource) Info() os.FileInfo {
