@@ -12,6 +12,7 @@ import (
 	"time"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
+	gfn "github.com/panyam/goutils/fn"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	"github.com/yuin/goldmark/ast"
@@ -39,6 +40,9 @@ func (d *DefaultContentProcessor) LoadPageFromMatter(page *Page, frontMatter map
 	// TODO - just do this by dynamically going through all fields in FM
 	// and calling SetViewProps and fail if this field doesnt exist - or using struct tags
 	var err error
+	if val, ok := frontMatter["tags"]; val != nil && ok {
+		SetViewProp(page, gfn.Map(val.([]any), func(v any) string { return v.(string) }), "Tags")
+	}
 	if val, ok := frontMatter["title"]; val != nil && ok {
 		page.Title = val.(string)
 	}

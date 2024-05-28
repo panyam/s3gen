@@ -63,6 +63,8 @@ type Page struct {
 
 	CanonicalUrl string
 
+	Tags []string
+
 	// The resource that corresponds to this page
 	// TODO - Should this be just the root resource or all resources for it?
 	Content *Resource

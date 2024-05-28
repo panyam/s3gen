@@ -322,7 +322,14 @@ func (s *Site) Rebuild(rs []*Resource) {
 			}
 			defer outfile.Close()
 
-			if !strings.HasSuffix(res.FullPath, "index.md") {
+			/*
+				if strings.HasSuffix(res.FullPath, "/index.md") {
+					log.Println("Writing ", res.FullPath, "------->", outres.FullPath)
+					contents, _ := res.ReadAll()
+					log.Println("Contents: ", string(contents))
+				}
+			*/
+			if false && !strings.HasSuffix(res.FullPath, "using-databases.mdx") {
 				continue
 			}
 
