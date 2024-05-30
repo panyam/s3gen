@@ -2,17 +2,14 @@ package core
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"path/filepath"
 	"strings"
 	ttmpl "text/template"
-	"time"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
-	gfn "github.com/panyam/goutils/fn"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	"github.com/yuin/goldmark/ast"
@@ -24,62 +21,13 @@ import (
 	"go.abhg.dev/goldmark/anchor"
 )
 
-type DefaultContentProcessor struct {
-}
-
-func (d *DefaultContentProcessor) LoadPageFromMatter(page *Page, frontMatter map[string]any) {
-	pageName := "BasePage"
-	if frontMatter["page"] != nil && frontMatter["page"] != "" {
-		pageName = frontMatter["page"].(string)
-	}
-	site := page.Site
-	page.RootView = site.NewView(pageName)
-	page.RootView.SetPage(page)
-
-	// For now we are going through "known" fields
-	// TODO - just do this by dynamically going through all fields in FM
-	// and calling SetViewProps and fail if this field doesnt exist - or using struct tags
-	var err error
-	if val, ok := frontMatter["tags"]; val != nil && ok {
-		SetViewProp(page, gfn.Map(val.([]any), func(v any) string { return v.(string) }), "Tags")
-	}
-	if val, ok := frontMatter["title"]; val != nil && ok {
-		page.Title = val.(string)
-	}
-	if val, ok := frontMatter["summary"]; val != nil && ok {
-		page.Summary = val.(string)
-	}
-	if val, ok := frontMatter["date"]; val != nil && ok {
-		// create at
-		if val.(string) != "" {
-			if page.CreatedAt, err = time.Parse("2006-1-2T03:04:05PM", val.(string)); err != nil {
-				log.Println("error parsing created time: ", err)
-			}
-		}
-	}
-
-	if val, ok := frontMatter["lastmod"]; val != nil && ok {
-		// update at
-		if val.(string) != "" {
-			if page.UpdatedAt, err = time.Parse("2006-1-2", val.(string)); err != nil {
-				log.Println("error parsing last mod time: ", err)
-			}
-		}
-	}
-
-	if val, ok := frontMatter["draft"]; val != nil && ok {
-		// update at
-		page.IsDraft = val.(bool)
-	}
-}
-
-type MDContentProcessor struct {
-	DefaultContentProcessor
+type MDResourceLoader struct {
+	DefaultResourceLoader
 	Template *ttmpl.Template
 }
 
-func NewMDContentProcessor(templatesDir string) *MDContentProcessor {
-	h := &MDContentProcessor{}
+func NewMDResourceLoader(templatesDir string) *MDResourceLoader {
+	h := &MDResourceLoader{}
 	h.Template = ttmpl.New("hello")
 	if templatesDir != "" {
 		// Funcs(CustomFuncMap()).
@@ -93,14 +41,20 @@ func NewMDContentProcessor(templatesDir string) *MDContentProcessor {
 	return h
 }
 
-func (m *MDContentProcessor) IsIndex(s *Site, res *Resource) bool {
+func (m *MDResourceLoader) LoadResource(s *Site, res *Resource) error {
 	base := filepath.Base(res.FullPath)
-	return base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
-}
+	res.IsIndex = base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
+	res.NeedsIndex = strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx")
 
-// Returns a list of output resources that depend on this resource
-func (m *MDContentProcessor) NeedsIndex(s *Site, res *Resource) bool {
-	return strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx")
+	base = filepath.Base(res.WithoutExt(true))
+	res.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
+
+	// if we are not parametric - then created the destination page
+	if !res.IsParametric {
+		res.DestPage = &Page{Site: s}
+		res.DestPage.LoadFrom(res)
+	}
+	return nil
 }
 
 // For a given resource - we need the page data to be populated
@@ -114,44 +68,24 @@ func (m *MDContentProcessor) NeedsIndex(s *Site, res *Resource) bool {
 // 1. Identify the Page properties (like title, slug etc and any others - may be this can come from FrontMatter?)
 // 2. More importantly - Return the PageView type that can render
 // the resource.
-func (m *MDContentProcessor) LoadPage(res *Resource, page *Page) (err error) {
-	frontMatter := res.FrontMatter().Data
-	m.LoadPageFromMatter(page, frontMatter)
-
-	// see if we can calculate the slug and link urls
-	site := page.Site
-	page.Slug = ""
-	relpath := ""
-	resdir := res.DirName()
-	if m.IsIndex(site, res) {
-		relpath, err = filepath.Rel(site.ContentRoot, resdir)
-		if err != nil {
-			return err
-		}
-	} else {
-		fp := res.WithoutExt(true)
-		relpath, err = filepath.Rel(site.ContentRoot, fp)
-		if err != nil {
-			return err
-		}
-	}
-	if relpath == "." {
-		relpath = ""
-	}
-	if relpath == "" {
-		relpath = "/"
-	}
-	if relpath[0] == '/' {
-		page.Link = fmt.Sprintf("%s%s", site.PathPrefix, relpath)
-	} else {
-		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
-	}
+func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) {
 	// log.Println("RelPath, Link: ", relpath, page.Link)
-
+	frontMatter := res.FrontMatter().Data
 	location := "BodyView"
 	if frontMatter["location"] != nil {
 		location = frontMatter["location"].(string)
 	}
+
+	/*
+		wrapper := ""
+		if frontMatter["wrapper"] != nil {
+			wrapper = frontMatter["wrapper"].(string)
+		}
+		if wrapper != "" {
+			// then create another view such that its BodyView
+			WrapperView{BaseView: BaseView{Template: wrapper}}
+		}
+	*/
 
 	mdview := &MDView{Res: res, Page: page}
 	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
@@ -183,7 +117,7 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 	mddata, _ := io.ReadAll(mdfile)
 	defer mdfile.Close()
 
-	mdTemplate, err := v.Site.TextTemplate.Parse(string(mddata))
+	mdTemplate, err := v.Site.TextTemplate().Parse(string(mddata))
 	if err != nil {
 		slog.Error("Template Parse Error: ", "error", err)
 		return err
@@ -192,7 +126,7 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 	finalmd := bytes.NewBufferString("")
 	err = mdTemplate.Execute(finalmd, v)
 	if err != nil {
-		slog.Error("Error executing MD: ", "error", err)
+		log.Println("Error executing MD: ", res.FullPath, err)
 	}
 
 	md := goldmark.New(
@@ -229,34 +163,7 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 		return err
 	}
 
-	if true {
-		writer.Write(buf.Bytes())
-	} else {
-		// Now load the layout
-		frontMatter := res.FrontMatter()
-		layoutName := ""
-		if frontMatter != nil && frontMatter.Data != nil {
-			if frontMatter.Data["layout"] != "" {
-				if layout, ok := frontMatter.Data["layout"].(string); ok {
-					layoutName = layout
-				}
-			}
-		}
-
-		if layoutName == "" { // If we dont have a layout name then render as is
-			writer.Write(buf.Bytes())
-		} else {
-			// out2 := bytes.NewBufferString("")
-			err = v.Site.HtmlTemplate.ExecuteTemplate(writer, layoutName, map[string]any{
-				"Content":  string(buf.Bytes()),
-				"PrevPost": nil,
-				"NextPost": nil,
-				"Post": map[string]any{
-					"Slug": "testslug",
-				},
-			})
-		}
-	}
+	writer.Write(buf.Bytes())
 	return err
 }
 

@@ -1,13 +1,16 @@
 package core
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/adrg/frontmatter"
+	gfn "github.com/panyam/goutils/fn"
 )
 
 const (
@@ -18,19 +21,15 @@ const (
 	ResourceStateFailed
 )
 
+type ResourceFilterFunc func(res *Resource) bool
+type ResourceSortFunc func(a *Resource, b *Resource) bool
+type PageFilterFunc func(res *Page) bool
+type PageSortFunc func(a *Page, b *Page) bool
+
 type FrontMatter struct {
 	Loaded bool
 	Data   map[string]any
 	Length int64
-}
-
-type ContentProcessor interface {
-	// Called to handle a resource -
-	// This can generate more resources
-	IsIndex(s *Site, res *Resource) bool
-	NeedsIndex(s *Site, res *Resource) bool
-	LoadPage(res *Resource, page *Page) error
-	// Process(s *Site, inres *Resource, writer io.Writer) error
 }
 
 // Our interface for returning all static content in our site
@@ -39,6 +38,9 @@ type ResourceService interface {
 	ListResources(filterFunc func(res *Resource) bool,
 		sortFunc func(a *Resource, b *Resource) bool,
 		offset int, count int) []*Resource
+	ListPages(filterFunc func(res *Page) bool,
+		sortFunc func(a *Page, b *Page) bool,
+		offset int, count int) []*Page
 }
 
 // A page in our site.  These are what are finally rendered.
@@ -67,7 +69,8 @@ type Page struct {
 
 	// The resource that corresponds to this page
 	// TODO - Should this be just the root resource or all resources for it?
-	Content *Resource
+	// SrcRes  *Resource
+	// DestRes *Resource
 
 	// Tells whether this is a detail page or a listing page
 	IsListPage bool
@@ -76,11 +79,11 @@ type Page struct {
 	// By default - we use the BasePage view
 	RootView View
 
-	// Next page after this for navigation
-	PrevPage *Page
+	// Loaded, Pending, NotFound, Failed
+	State int
 
-	// Previous page for navigation
-	NextPage *Page
+	// Any errors with this resource
+	Error error
 }
 
 // A ResourceBundle is a collection of resources all nested under a single
@@ -95,6 +98,82 @@ type ResourceBundle struct {
 	RootDir string
 }
 
+func (page *Page) LoadFrom(res *Resource) error {
+	frontMatter := res.FrontMatter().Data
+	pageName := "BasePage"
+	if frontMatter["page"] != nil && frontMatter["page"] != "" {
+		pageName = frontMatter["page"].(string)
+	}
+	site := page.Site
+	page.RootView = site.NewView(pageName)
+	page.RootView.SetPage(page)
+
+	// For now we are going through "known" fields
+	// TODO - just do this by dynamically going through all fields in FM
+	// and calling SetViewProps and fail if this field doesnt exist - or using struct tags
+	var err error
+	if val, ok := frontMatter["tags"]; val != nil && ok {
+		SetViewProp(page, gfn.Map(val.([]any), func(v any) string { return v.(string) }), "Tags")
+	}
+	if val, ok := frontMatter["title"]; val != nil && ok {
+		page.Title = val.(string)
+	}
+	if val, ok := frontMatter["summary"]; val != nil && ok {
+		page.Summary = val.(string)
+	}
+	if val, ok := frontMatter["date"]; val != nil && ok {
+		// create at
+		if val.(string) != "" {
+			if page.CreatedAt, err = time.Parse("2006-1-2T03:04:05PM", val.(string)); err != nil {
+				log.Println("error parsing created time: ", err)
+			}
+		}
+	}
+
+	if val, ok := frontMatter["lastmod"]; val != nil && ok {
+		// update at
+		if val.(string) != "" {
+			if page.UpdatedAt, err = time.Parse("2006-1-2", val.(string)); err != nil {
+				log.Println("error parsing last mod time: ", err)
+			}
+		}
+	}
+
+	if val, ok := frontMatter["draft"]; val != nil && ok {
+		// update at
+		page.IsDraft = val.(bool)
+	}
+
+	// see if we can calculate the slug and link urls
+	page.Slug = ""
+	relpath := ""
+	resdir := res.DirName()
+	if res.IsIndex {
+		relpath, err = filepath.Rel(site.ContentRoot, resdir)
+		if err != nil {
+			return err
+		}
+	} else {
+		fp := res.WithoutExt(true)
+		relpath, err = filepath.Rel(site.ContentRoot, fp)
+		if err != nil {
+			return err
+		}
+	}
+	if relpath == "." {
+		relpath = ""
+	}
+	if relpath == "" {
+		relpath = "/"
+	}
+	if relpath[0] == '/' {
+		page.Link = fmt.Sprintf("%s%s", site.PathPrefix, relpath)
+	} else {
+		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
+	}
+	return nil
+}
+
 /**
  * Each resource in our static site is identified by a unique path.
  * Note that resources can go through multiple transformations
@@ -102,9 +181,14 @@ type ResourceBundle struct {
  * Each resource is uniquely identified by the Bundle + Path combination
  */
 type Resource struct {
+	Site        *Site
 	FullPath    string // Unique URI/Path
 	BundleName  string
 	ContentType string
+
+	IsIndex      bool
+	NeedsIndex   bool
+	IsParametric bool
 
 	// Created timestamp on disk
 	CreatedAt time.Time
@@ -115,13 +199,13 @@ type Resource struct {
 	// will be set to when it was last processed if no errors occurred
 	ProcessedAt time.Time
 
-	// Loaded, Pending, NotFound, Failed
-	State int
-
 	// Resources this one depends on - to determine if a rebuild is needed
 	// If a resource does not depend on any others then this is a root
 	// resource
 	DependsOn map[string]bool
+
+	// Loaded, Pending, NotFound, Failed
+	State int
 
 	// Any errors with this resource
 	Error error
@@ -131,6 +215,33 @@ type Resource struct {
 
 	// Marks whether front matter was loaded
 	frontMatter FrontMatter
+
+	// The destination page if this resource is for a target page
+	DestPage *Page
+
+	// If this is a parametric resources - this returns the space of all parameters
+	// possible for this resource based on how it is loaded and its config it takes
+	// For example a blog page of the form /a/b/c/[name].md could have 10 distinct values
+	// for the "name" parameter.  Those will be populated here by the content processor
+	ParamValues []string
+
+	// Once ParamValues are captured, the site will render this render this resource
+	// once per Param value.   Each page will be rendered in a different location.
+	ParamPages map[string]*Page
+}
+
+func (r *Resource) Load() *Resource {
+	s := r.Site
+	proc := s.GetResourceLoader(r)
+	if proc != nil && r.State == ResourceStatePending {
+		r.Error = proc.LoadResource(s, r)
+		if r.Error != nil {
+			log.Println("Error loading rource: ", r.Error, r.FullPath)
+		} else {
+			r.State = ResourceStateLoaded
+		}
+	}
+	return r
 }
 
 func (r *Resource) Reset() {
@@ -138,6 +249,9 @@ func (r *Resource) Reset() {
 	r.info = nil
 	r.Error = nil
 	r.frontMatter.Loaded = false
+	r.DestPage = nil
+	r.ParamValues = nil
+	r.ParamPages = make(map[string]*Page)
 }
 
 // Ensures that a resource's parent directory exists
@@ -148,10 +262,12 @@ func (r *Resource) EnsureDir() {
 	}
 }
 
+// Returns the resource's directory
 func (r *Resource) DirName() string {
 	return filepath.Dir(r.FullPath)
 }
 
+// Returns the resource without the extension.
 func (r *Resource) WithoutExt(all bool) string {
 	out := r.FullPath
 	for {
@@ -200,7 +316,7 @@ func (r *Resource) Reader() (io.ReadCloser, error) {
 }
 
 func (r *Resource) IsDir() bool {
-	return false
+	return r.Info().IsDir()
 }
 
 func (r *Resource) Ext() string {
@@ -228,4 +344,78 @@ func (r *Resource) FrontMatter() *FrontMatter {
 		}
 	}
 	return &r.frontMatter
+}
+
+func (r *Resource) PageFor(param string) *Page {
+	if param == "" {
+		return r.DestPage
+	}
+	page, ok := r.ParamPages[param]
+	if !ok || page == nil {
+		page = &Page{Site: r.Site}
+		r.ParamPages[param] = page
+		page.LoadFrom(r)
+	}
+	return page
+}
+
+// Returns the path relative to the content root
+func (r *Resource) RelPath() string {
+	respath, found := strings.CutPrefix(r.FullPath, r.Site.ContentRoot)
+	if !found {
+		return ""
+	}
+	return respath
+}
+
+func (r *Resource) DestPathFor(param string) (destpath string) {
+	s := r.Site
+	respath, found := strings.CutPrefix(r.FullPath, s.ContentRoot)
+	if !found {
+		log.Println("Respath not found: ", r.FullPath, s.ContentRoot)
+		return ""
+	}
+
+	if r.IsParametric {
+		if param == "" {
+			return
+		}
+		// if we have /a/b/c/d/[param].ext
+		// then do /a/b/c/d/param/index.html
+		// res is not a dir - eg it something like xyz.ext
+		// depending on ext - if the ext is for a page file
+		// then generate OutDir/xyz/index.html
+		// otherwise OutDir/xyz.ext
+		ext := filepath.Ext(respath)
+
+		rem := respath[:len(respath)-len(ext)]
+		dirname := filepath.Dir(rem)
+
+		// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
+		// can use that for language sites
+		destpath = filepath.Join(s.OutputDir, dirname, param, "index.html")
+	} else {
+		if r.Info().IsDir() {
+			// Then this will be served with dest/index.html
+			destpath = filepath.Join(s.OutputDir, respath)
+		} else if r.IsIndex {
+			destpath = filepath.Join(s.OutputDir, filepath.Dir(respath), "index.html")
+		} else if r.NeedsIndex {
+			// res is not a dir - eg it something like xyz.ext
+			// depending on ext - if the ext is for a page file
+			// then generate OutDir/xyz/index.html
+			// otherwise OutDir/xyz.ext
+			ext := filepath.Ext(respath)
+
+			rem := respath[:len(respath)-len(ext)]
+
+			// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
+			// can use that for language sites
+			destpath = filepath.Join(s.OutputDir, rem, "index.html")
+		} else {
+			// basic static file - so copy as is
+			destpath = filepath.Join(s.OutputDir, respath)
+		}
+	}
+	return
 }

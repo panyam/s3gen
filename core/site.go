@@ -73,9 +73,9 @@ type Site struct {
 	// This is only needed so that the generator knows where to "root" the blog in the URL
 	PathPrefix string
 
-	// ContentProcessors tell us how to "process" a content of a given type.
+	// ResourceLoaders tell us how to "process" a content of a given type.
 	// types are denoted by extensions for now later on we could do something else
-	ContentProcessors map[string]ContentProcessor
+	ResourceLoaders map[string]ResourceLoader
 
 	IgnoreDirFunc  func(dirpath string) bool
 	IgnoreFileFunc func(filepath string) bool
@@ -89,13 +89,15 @@ type Site struct {
 	CommonFuncMap htmpl.FuncMap
 
 	// Global templates dirs
-	HtmlTemplate  *htmpl.Template
-	HtmlFuncMap   htmpl.FuncMap
-	HtmlTemplates []string
+	htmlTemplateClone *htmpl.Template
+	htmlTemplate      *htmpl.Template
+	HtmlFuncMap       htmpl.FuncMap
+	HtmlTemplates     []string
 
-	TextTemplate  *ttmpl.Template
-	TextFuncMap   ttmpl.FuncMap
-	TextTemplates []string
+	textTemplateClone *ttmpl.Template
+	textTemplate      *ttmpl.Template
+	TextFuncMap       ttmpl.FuncMap
+	TextTemplates     []string
 
 	SiteMetadata any
 
@@ -108,53 +110,91 @@ type Site struct {
 	reloadWatcher *watcher.Watcher
 
 	resources map[string]*Resource
+	pages     map[string]*Page
 }
 
 func (s *Site) Init() *Site {
 	s.ContentRoot = gut.ExpandUserPath(s.ContentRoot)
 	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
-	if s.HtmlTemplate == nil {
-		s.HtmlTemplate = htmpl.New("SiteHtmlTemplate").Funcs(DefaultFuncMap(s))
+	if s.resources == nil {
+		s.resources = make(map[string]*Resource)
+	}
+	if s.pages == nil {
+		s.pages = make(map[string]*Page)
+	}
+	return s
+}
+
+func (s *Site) HtmlTemplateClone() *htmpl.Template {
+	out, err := s.htmlTemplateClone.Clone()
+	if err != nil {
+		log.Println("Html Template Clone Error: ", err)
+	}
+	return out
+}
+
+func (s *Site) TextTemplateClone() *ttmpl.Template {
+	out, err := s.textTemplateClone.Clone()
+	if err != nil {
+		log.Println("Text Template Clone Error: ", err)
+	}
+	return out
+}
+
+func (s *Site) TextTemplate() *ttmpl.Template {
+	if s.textTemplate == nil {
+		s.textTemplate = ttmpl.New("SiteTextTemplate").Funcs(DefaultFuncMap(s))
 		if s.CommonFuncMap != nil {
-			s.HtmlTemplate = s.HtmlTemplate.Funcs(s.CommonFuncMap)
+			s.textTemplate = s.textTemplate.Funcs(s.CommonFuncMap)
+		}
+		if s.TextFuncMap != nil {
+			s.textTemplate = s.textTemplate.Funcs(s.TextFuncMap)
+		}
+		for _, templatesDir := range s.TextTemplates {
+			t, err := s.textTemplate.ParseGlob(templatesDir)
+			if err != nil {
+				log.Println("Error parsing templates glob: ", templatesDir)
+			} else {
+				s.textTemplate = t
+				log.Println("Loaded Text Templates")
+			}
+		}
+		var err error
+		s.textTemplateClone, err = s.textTemplate.Clone()
+		if err != nil {
+			log.Println("TextTemplate Clone error: ", err)
+		}
+	}
+	return s.textTemplate
+}
+
+func (s *Site) HtmlTemplate() *htmpl.Template {
+	if s.htmlTemplate == nil {
+		s.htmlTemplate = htmpl.New("SiteHtmlTemplate").Funcs(DefaultFuncMap(s))
+		if s.CommonFuncMap != nil {
+			s.htmlTemplate = s.htmlTemplate.Funcs(s.CommonFuncMap)
 		}
 		if s.HtmlFuncMap != nil {
-			s.HtmlTemplate = s.HtmlTemplate.Funcs(s.HtmlFuncMap)
+			s.htmlTemplate = s.htmlTemplate.Funcs(s.HtmlFuncMap)
 		}
 
 		for _, templatesDir := range s.HtmlTemplates {
 			slog.Info("Loaded HTML Template: ", "templatesDir", templatesDir)
-			t, err := s.HtmlTemplate.ParseGlob(templatesDir)
+			t, err := s.htmlTemplate.ParseGlob(templatesDir)
 			if err != nil {
 				slog.Error("Error parsing templates glob: ", "templatesDir", templatesDir, "error", err)
 			} else {
-				s.HtmlTemplate = t
+				s.htmlTemplate = t
 				slog.Info("Loaded HTML Template: ", "templatesDir", templatesDir)
 			}
 		}
-	}
-	if s.TextTemplate == nil {
-		s.TextTemplate = ttmpl.New("SiteTextTemplate").Funcs(DefaultFuncMap(s))
-		if s.CommonFuncMap != nil {
-			s.TextTemplate = s.TextTemplate.Funcs(s.CommonFuncMap)
-		}
-		if s.TextFuncMap != nil {
-			s.TextTemplate = s.TextTemplate.Funcs(s.TextFuncMap)
-		}
-		for _, templatesDir := range s.TextTemplates {
-			t, err := s.TextTemplate.ParseGlob(templatesDir)
-			if err != nil {
-				log.Println("Error parsing templates glob: ", templatesDir)
-			} else {
-				s.TextTemplate = t
-				log.Println("Loaded Text Templates")
-			}
+		var err error
+		s.htmlTemplateClone, err = s.htmlTemplate.Clone()
+		if err != nil {
+			log.Println("HtmlTemplate Clone error: ", err)
 		}
 	}
-	if s.resources == nil {
-		s.resources = make(map[string]*Resource)
-	}
-	return s
+	return s.htmlTemplate
 }
 
 // https://benhoyt.com/writings/go-routing/#split-switch
@@ -239,8 +279,8 @@ func (s *Site) Load() *Site {
 	return s
 }
 
-func (s *Site) ListResources(filterFunc func(res *Resource) bool,
-	sortFunc func(a *Resource, b *Resource) bool,
+func (s *Site) ListResources(filterFunc ResourceFilterFunc,
+	sortFunc ResourceSortFunc,
 	offset int, count int) []*Resource {
 	var foundResources []*Resource
 	// keep a map of files encountered and their statuses
@@ -293,7 +333,7 @@ func (s *Site) ListResources(filterFunc func(res *Resource) bool,
 
 // This is the heart of the build process.   This method is called with a list of resources that
 // have to be reprocessed (either due to periodic updates or change events etc).   Resources in
-// our site form a graph and each resource is processed by a ContentProcessor appropriate for it
+// our site form a graph and each resource is processed by a ResourceLoader appropriate for it
 // The content processor can create more resources that may need an update because they are
 // dependant on this resource.   By allowing a list of resources to be processed in a batch
 // it is more efficient to perform batch dependencies instead of doing repeated builds for each
@@ -304,76 +344,84 @@ func (s *Site) ListResources(filterFunc func(res *Resource) bool,
 // So this is a closure operation on sets of resources each time
 func (s *Site) Rebuild(rs []*Resource) {
 	// var errors []error
-
 	for _, res := range rs {
-		proc := s.GetContentProcessor(res)
-		if proc == nil {
-			// log.Println("Processor not found for resource: ", res.FullPath)
+		/*
+			if strings.HasSuffix(res.FullPath, "/index.md") {
+				log.Println("Writing ", res.FullPath, "------->", outres.FullPath)
+				contents, _ := res.ReadAll()
+				log.Println("Contents: ", string(contents))
+			}
+		*/
+		if false && !strings.HasSuffix(res.FullPath, "using-databases.mdx") {
 			continue
 		}
-		outres := s.DestResourceFor(res)
-		if outres != nil {
-			// this is an index page
-			outres.EnsureDir()
-			outfile, err := os.Create(outres.FullPath)
-			if err != nil {
-				log.Println("Error writing to: ", outres.FullPath, err)
-				continue
+
+		// Should we just treat parametric pages separately after this loop?
+		// here is where seperate pages and data may be useful?
+		// pages
+
+		var params []string
+		if res.IsParametric {
+			for _, param := range res.ParamValues {
+				params = append(params, param)
 			}
-			defer outfile.Close()
+		} else {
+			params = append(params, "")
+		}
 
-			/*
-				if strings.HasSuffix(res.FullPath, "/index.md") {
-					log.Println("Writing ", res.FullPath, "------->", outres.FullPath)
-					contents, _ := res.ReadAll()
-					log.Println("Contents: ", string(contents))
-				}
-			*/
-			if false && !strings.HasSuffix(res.FullPath, "using-databases.mdx") {
-				continue
-			}
+		// now generate the pages here
+		proc := s.GetResourceLoader(res)
+		if proc == nil {
+			continue
+		}
 
-			page, err := s.GetPage(res)
-			if page == nil || err != nil {
-				slog.Warn("Could not create page for resource: ", "res", res, err)
-			} else {
-				// After the page is populate, initialise it
-				page.RootView.InitView(s, nil)
-
-				// w.WriteHeader(http.StatusOK)
-				err = s.RenderView(outfile, page.RootView, "")
+		for _, param := range params {
+			destpath := res.DestPathFor(param)
+			outres := s.GetResource(destpath)
+			if outres != nil {
+				outres.EnsureDir()
+				outfile, err := os.Create(outres.FullPath)
 				if err != nil {
-					slog.Error("Render Error: ", "err", res.FullPath, err)
-					// c.Abort()
+					log.Println("Error writing to: ", outres.FullPath, err)
+					continue
+				}
+				defer outfile.Close()
+
+				page := res.PageFor(param)
+
+				// Now setup the view for this page
+				if page.State == ResourceStatePending {
+					page.Error = proc.SetupPageView(res, page)
+					if page.Error != nil {
+						log.Println("Error setting up page: ", page.Error, res.FullPath)
+					} else {
+						page.State = ResourceStateLoaded
+					}
+				}
+
+				if page.Error == nil {
+					// After the page is populate, initialise it
+					page.RootView.InitView(s, nil)
+
+					// w.WriteHeader(http.StatusOK)
+					err = s.RenderView(outfile, page.RootView, "")
+					if err != nil {
+						slog.Error("Render Error: ", "err", res.FullPath, err)
+						// c.Abort()
+					}
 				}
 			}
-
-			// What should the build pipeline here be?
-			// P = Page from Res(Site = S, Res = R, RootView = Base page for R)
-			// P.Data = get/load static content for this page - custom?
-			//				  eg page list, tag list, author list, others
-			// L = Pick a layout: say via layout
-			// R = RenderedResource(R, Site, P) into layout (raw html)
-			// Set R into B (where every applicable)
-			// Render(B, outfile)
-			//
-			// Fill values for the basepage - including where ever the po
-			// render the base
-			// log.Println("Processing: ", res.FullPath, "------>", outres.FullPath)
-			// if err := proc.Process(s, res, outfile); err != nil { log.Printf("error processing %s: %v", res.FullPath, err) }
 		}
 	}
 }
 
 // Site extension to render a view
 func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
-	if templateName != "" {
-		return s.HtmlTemplate.ExecuteTemplate(writer, templateName, v)
+	if templateName == "" {
+		templateName = v.TemplateName()
 	}
-
-	templateName = v.TemplateName()
 	if templateName != "" {
-		return s.HtmlTemplate.ExecuteTemplate(writer, templateName, v)
+		return s.HtmlTemplate().ExecuteTemplate(writer, templateName, v)
 	}
 	return v.RenderResponse(writer)
 }
@@ -387,70 +435,7 @@ func (s *Site) NewView(name string) (view View) {
 	return nil
 }
 
-func (s *Site) GetPage(res *Resource) (page *Page, err error) {
-	if res.IsDir() {
-		page = &Page{Site: s}
-	} else {
-		if res.Ext() == ".md" || res.Ext() == ".mdx" {
-			page = &Page{Site: s}
-		}
-	}
-
-	if page != nil {
-		proc := s.GetContentProcessor(res)
-		if proc != nil {
-			err = proc.LoadPage(res, page)
-			if err != nil {
-				log.Println("error populating page: ", err)
-			} else {
-			}
-		}
-	}
-	return
-}
-
-func (s *Site) DestResourceFor(res *Resource) *Resource {
-	// if a resource is in the content root - then return its "equiv" in the output
-	// This also ensures that we have problem "Foo/index.html" for Foo.md files
-	respath, found := strings.CutPrefix(res.FullPath, s.ContentRoot)
-	if !found {
-		log.Println("H1: ", res.FullPath, s.ContentRoot)
-		return nil
-	}
-
-	if res.Info() == nil {
-		log.Println("here 2....")
-		return nil
-	}
-
-	proc := s.GetContentProcessor(res)
-	destpath := ""
-	if res.Info().IsDir() {
-		// Then this will be served with dest/index.html
-		destpath = filepath.Join(s.OutputDir, respath)
-	} else if proc.IsIndex(s, res) {
-		destpath = filepath.Join(s.OutputDir, filepath.Dir(respath), "index.html")
-	} else if proc.NeedsIndex(s, res) {
-		// res is not a dir - eg it something like xyz.ext
-		// depending on ext - if the ext is for a page file
-		// then generate OutDir/xyz/index.html
-		// otherwise OutDir/xyz.ext
-		ext := filepath.Ext(respath)
-
-		rem := respath[:len(respath)-len(ext)]
-
-		// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
-		// can use that for language sites
-		destpath = filepath.Join(s.OutputDir, rem, "index.html")
-	} else {
-		// basic static file - so copy as is
-		destpath = filepath.Join(s.OutputDir, respath)
-	}
-	// log.Println("Res, Dest Paths: ", respath, destpath)
-	return s.GetResource(destpath)
-}
-
-func (s *Site) GetContentProcessor(rs *Resource) ContentProcessor {
+func (s *Site) GetResourceLoader(rs *Resource) ResourceLoader {
 	// normal file
 	// check type and call appropriate processor
 	// Should we call processor directly here or collect a list and
@@ -459,10 +444,10 @@ func (s *Site) GetContentProcessor(rs *Resource) ContentProcessor {
 
 	// TODO - move to a table lookup or regex based one
 	if ext == ".mdx" || ext == ".md" {
-		return NewMDContentProcessor("")
+		return NewMDResourceLoader("")
 	}
 	if ext == ".html" || ext == ".htm" {
-		return &HTMLContentProcessor{}
+		return NewHTMLResourceLoader("")
 	}
 	// log.Println("Could not find proc for, Name, Ext: ", rs.FullPath, ext)
 	return nil
@@ -475,6 +460,7 @@ func (s *Site) GetResource(fullpath string) *Resource {
 	res, found := s.resources[fullpath]
 	if res == nil || !found {
 		res = &Resource{
+			Site:      s,
 			FullPath:  fullpath,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -482,6 +468,12 @@ func (s *Site) GetResource(fullpath string) *Resource {
 		}
 		s.resources[fullpath] = res
 	}
+	// Try to load it too
+	res.Load()
+	if res.Info() == nil {
+		log.Println("Resource info is null: ", res.FullPath)
+	}
+
 	return res
 }
 

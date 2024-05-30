@@ -136,18 +136,18 @@ func (v *BaseView) RenderResponse(writer io.Writer) (err error) {
 		t := reflect.TypeOf(v.Self)
 		e := t.Elem()
 		// use the type here
-		err := v.Site.HtmlTemplate.ExecuteTemplate(writer, e.Name(), v.Self)
+		err := v.Site.HtmlTemplate().ExecuteTemplate(writer, e.Name(), v.Self)
 		if err != nil {
 			log.Println("Error with e.Name(), Error: ", e.Name(), err)
 			// try with the .html name
-			err = v.Site.HtmlTemplate.ExecuteTemplate(writer, e.Name()+".html", v.Self)
+			err = v.Site.HtmlTemplate().ExecuteTemplate(writer, e.Name()+".html", v.Self)
 		}
 		if err != nil {
 			log.Println("Error with e.Name().html, Error: ", e.Name(), err)
 			_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
 		}
 	} else {
-		return v.Site.HtmlTemplate.ExecuteTemplate(writer, v.TemplateName(), v.Self)
+		return v.Site.HtmlTemplate().ExecuteTemplate(writer, v.TemplateName(), v.Self)
 	}
 	return
 }

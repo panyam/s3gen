@@ -49,7 +49,7 @@ func DefaultFuncMap(s *Site) template.FuncMap {
 
 		"RenderHtml": func(templateName string, params map[string]any) (template.HTML, error) {
 			out := bytes.NewBufferString("")
-			err := s.HtmlTemplate.ExecuteTemplate(out, templateName, params)
+			err := s.HtmlTemplate().ExecuteTemplate(out, templateName, params)
 			return template.HTML(out.String()), err
 		},
 
@@ -80,7 +80,7 @@ func DefaultFuncMap(s *Site) template.FuncMap {
 
 		"RenderText": func(templateName string, params map[string]any) (string, error) {
 			out := bytes.NewBufferString("")
-			err := s.TextTemplate.ExecuteTemplate(out, templateName, params)
+			err := s.TextTemplate().ExecuteTemplate(out, templateName, params)
 			return out.String(), err
 		},
 
