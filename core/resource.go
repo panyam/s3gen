@@ -329,18 +329,19 @@ func (r *Resource) FrontMatter() *FrontMatter {
 		if err != nil {
 			r.Error = err
 			r.State = ResourceStateFailed
-		}
-		r.frontMatter.Data = make(map[string]any)
-		// TODO: We want a library that just returns frontMatter and Length
-		// this way we dont need to load the entire content unless we needed
-		// and even then we could just do it via a reader
-		rest, err := frontmatter.Parse(f, r.frontMatter.Data)
-		r.frontMatter.Length = r.Info().Size() - int64(len(rest))
-		if err != nil {
-			r.Error = err
-			r.State = ResourceStateFailed
 		} else {
-			r.frontMatter.Loaded = true
+			r.frontMatter.Data = make(map[string]any)
+			// TODO: We want a library that just returns frontMatter and Length
+			// this way we dont need to load the entire content unless we needed
+			// and even then we could just do it via a reader
+			rest, err := frontmatter.Parse(f, r.frontMatter.Data)
+			r.frontMatter.Length = r.Info().Size() - int64(len(rest))
+			if err != nil {
+				r.Error = err
+				r.State = ResourceStateFailed
+			} else {
+				r.frontMatter.Loaded = true
+			}
 		}
 	}
 	return &r.frontMatter
