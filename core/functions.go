@@ -46,42 +46,42 @@ func IntDiv[A Number, B Number](a A, b B) (out int64) {
 	return int64(FloatDiv(a, b))
 }
 
-func ToInt(v any) int64 {
+func ToInt(v any) int {
 	if val, ok := v.(int); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(int8); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(int16); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(int32); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(int64); ok {
-		return val
+		return int(val)
 	}
 	if val, ok := v.(uint8); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(uint16); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(uint); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(uint32); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(uint64); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(float32); ok {
-		return int64(val)
+		return int(val)
 	}
 	if val, ok := v.(float64); ok {
-		return int64(val)
+		return int(val)
 	}
 	// Todo check string too
 	return 0
@@ -160,12 +160,12 @@ func DefaultFuncMap(s *Site) template.FuncMap {
 			return template.JS(out)
 		},
 
-		"Slice": func(values any, offset, count int) any {
+		"Slice": func(values any, offset, count any) any {
 			v := reflect.ValueOf(values)
 			t := reflect.TypeOf(values)
 			// log.Println("T: ", t, t.Kind(), reflect.Slice, reflect.Array)
 			if t.Kind() == reflect.Array || t.Kind() == reflect.Slice || t.Kind() == reflect.String {
-				return v.Slice(offset, offset+count).Interface()
+				return v.Slice(ToInt(offset), ToInt(offset)+ToInt(count)).Interface()
 			}
 			return nil
 		},
@@ -173,6 +173,7 @@ func DefaultFuncMap(s *Site) template.FuncMap {
 		"MultInts": MultNums[int],
 		"SubInt":   SubNums[int],
 		"DivInt":   IntDiv[int, int],
+		"Int":      ToInt,
 		"Float":    ToFloat,
 		"Add": func(vals ...any) (out float64) {
 			for _, v := range vals {
