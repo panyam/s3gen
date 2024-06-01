@@ -39,7 +39,7 @@ func (m *HTMLResourceLoader) LoadResource(s *Site, res *Resource) error {
 
 	// if we are not parametric - then created the destination page
 	if !res.IsParametric {
-		res.DestPage = &Page{Site: s}
+		res.DestPage = &Page{Site: s, Res: res}
 		res.DestPage.LoadFrom(res)
 	} else {
 		// what

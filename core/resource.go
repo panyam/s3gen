@@ -69,7 +69,7 @@ type Page struct {
 
 	// The resource that corresponds to this page
 	// TODO - Should this be just the root resource or all resources for it?
-	// SrcRes  *Resource
+	Res *Resource
 	// DestRes *Resource
 
 	// Tells whether this is a detail page or a listing page
@@ -87,7 +87,7 @@ type Page struct {
 }
 
 // A ResourceBundle is a collection of resources all nested under a single
-// root directory.
+// //  root directory.
 type ResourceBundle struct {
 	// Name of this resource bundle
 	Name string
@@ -353,7 +353,7 @@ func (r *Resource) PageFor(param string) *Page {
 	}
 	page, ok := r.ParamPages[param]
 	if !ok || page == nil {
-		page = &Page{Site: r.Site}
+		page = &Page{Site: r.Site, Res: r}
 		r.ParamPages[param] = page
 		page.LoadFrom(r)
 	}

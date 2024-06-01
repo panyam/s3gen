@@ -51,7 +51,7 @@ func (m *MDResourceLoader) LoadResource(s *Site, res *Resource) error {
 
 	// if we are not parametric - then created the destination page
 	if !res.IsParametric {
-		res.DestPage = &Page{Site: s}
+		res.DestPage = &Page{Site: s, Res: res}
 		res.DestPage.LoadFrom(res)
 	}
 	return nil
@@ -132,6 +132,7 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
+			extension.Typographer,
 			highlighting.NewHighlighting(
 				highlighting.WithStyle("monokai"),
 				highlighting.WithFormatOptions(
