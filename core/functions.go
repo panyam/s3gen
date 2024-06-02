@@ -2,13 +2,11 @@ package core
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"html/template"
 	"log"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -16,165 +14,24 @@ import (
 	gut "github.com/panyam/goutils/utils"
 )
 
-func AddNums[T float32 | int | int32 | float64 | int64 | uint64 | uint32 | uint](values ...T) (out T) {
-	for _, v := range values {
-		out += v
-	}
-	return
-}
-
-func MultNums[T float32 | int | int32 | float64 | int64 | uint64 | uint32 | uint](values ...T) (out T) {
-	for _, v := range values {
-		out *= v
-	}
-	return
-}
-
-func SubNums[T float32 | int | int32 | float64 | int64 | uint64 | uint32 | uint](a, b T) (out T) {
-	return a - b
-}
-
-type Number interface {
-	float32 | int | int32 | float64 | int64 | uint64 | uint32 | uint
-}
-
-func FloatDiv[A Number, B Number](a A, b B) (out float64) {
-	return float64(a) / float64(b)
-}
-
-func IntDiv[A Number, B Number](a A, b B) (out int64) {
-	return int64(FloatDiv(a, b))
-}
-
-func ToInt(v any) int {
-	if val, ok := v.(int); ok {
-		return int(val)
-	}
-	if val, ok := v.(int8); ok {
-		return int(val)
-	}
-	if val, ok := v.(int16); ok {
-		return int(val)
-	}
-	if val, ok := v.(int32); ok {
-		return int(val)
-	}
-	if val, ok := v.(int64); ok {
-		return int(val)
-	}
-	if val, ok := v.(uint8); ok {
-		return int(val)
-	}
-	if val, ok := v.(uint16); ok {
-		return int(val)
-	}
-	if val, ok := v.(uint); ok {
-		return int(val)
-	}
-	if val, ok := v.(uint32); ok {
-		return int(val)
-	}
-	if val, ok := v.(uint64); ok {
-		return int(val)
-	}
-	if val, ok := v.(float32); ok {
-		return int(val)
-	}
-	if val, ok := v.(float64); ok {
-		return int(val)
-	}
-	// Todo check string too
-	return 0
-}
-
-func ToFloat(v any) float64 {
-	if val, ok := v.(int); ok {
-		return float64(val)
-	}
-	if val, ok := v.(int8); ok {
-		return float64(val)
-	}
-	if val, ok := v.(int16); ok {
-		return float64(val)
-	}
-	if val, ok := v.(int32); ok {
-		return float64(val)
-	}
-	if val, ok := v.(int64); ok {
-		return float64(val)
-	}
-	if val, ok := v.(uint8); ok {
-		return float64(val)
-	}
-	if val, ok := v.(uint16); ok {
-		return float64(val)
-	}
-	if val, ok := v.(uint); ok {
-		return float64(val)
-	}
-	if val, ok := v.(uint32); ok {
-		return float64(val)
-	}
-	if val, ok := v.(uint64); ok {
-		return float64(val)
-	}
-	if val, ok := v.(float32); ok {
-		return float64(val)
-	}
-	if val, ok := v.(float64); ok {
-		return val
-	}
-
-	// Todo - do string as well
-	return 0
-}
-
 func DefaultFuncMap(s *Site) template.FuncMap {
 	return template.FuncMap{
-		"Now": time.Now,
-
-		"HTML": func(s string) template.HTML {
-			return template.HTML(s)
-		},
-
-		"JS": func(s string) template.JS {
-			return template.JS(s)
-		},
-
-		"URL": func(s string) template.URL {
-			return template.URL(s)
-		},
-
-		"TypeOf": reflect.TypeOf,
-
-		"expandAttrs": func(attrs map[string]any) template.JS {
-			out := " "
-			if attrs != nil {
-				for key, value := range attrs {
-					val := fmt.Sprintf("%v", value)
-					val = strings.Replace(val, "\"", "&quot;", -1)
-					val = strings.Replace(val, "\"", "&quot;", -1)
-					out += " " + fmt.Sprintf("%s = \"%s\"", key, val)
-				}
-			}
-			return template.JS(out)
-		},
-
-		"Slice": func(values any, offset, count any) any {
-			v := reflect.ValueOf(values)
-			t := reflect.TypeOf(values)
-			// log.Println("T: ", t, t.Kind(), reflect.Slice, reflect.Array)
-			if t.Kind() == reflect.Array || t.Kind() == reflect.Slice || t.Kind() == reflect.String {
-				return v.Slice(ToInt(offset), ToInt(offset)+ToInt(count)).Interface()
-			}
-			return nil
-		},
-		"AddInts":  AddNums[int],
-		"MultInts": MultNums[int],
-		"SubInt":   SubNums[int],
-		"DivInt":   IntDiv[int, int],
-		"Int":      ToInt,
-		"Float":    ToFloat,
+		"Now":         time.Now,
+		"HTML":        func(s string) template.HTML { return template.HTML(s) },
+		"JS":          func(s string) template.JS { return template.JS(s) },
+		"URL":         func(s string) template.URL { return template.URL(s) },
+		"RangeN":      func(n int) []struct{} { return make([]struct{}, n) },
+		"TypeOf":      reflect.TypeOf,
+		"ExpandAttrs": ExpandAttrs,
+		"Slice":       SliceArray,
+		"AddInts":     AddNums[int],
+		"MultInts":    MultNums[int],
+		"SubInt":      SubNums[int],
+		"DivInt":      IntDiv[int, int],
+		"String":      ToString,
+		"Int":         ToInt,
+		"Float":       ToFloat,
+		"IntList":     NumList[int],
 		"Add": func(vals ...any) (out float64) {
 			for _, v := range vals {
 				out += ToFloat(v)
@@ -192,8 +49,8 @@ func DefaultFuncMap(s *Site) template.FuncMap {
 		"Floor": func(val float64) int64 {
 			return int64(val)
 		},
-		"Ceil": func(val float64) int64 {
-			return int64(val + 0.5)
+		"Ceil": func(val float64) int {
+			return int(val + 0.5)
 		},
 
 		"RenderHtml": func(templateName string, params map[string]any) (template.HTML, error) {
@@ -242,40 +99,8 @@ func DefaultFuncMap(s *Site) template.FuncMap {
 		"Split":     strings.Split,
 		"HasPrefix": strings.HasPrefix,
 		"HasSuffix": strings.HasSuffix,
-		"Slugify": func(input string) string {
-			// Remove special characters
-			reg, err := regexp.Compile("[^a-zA-Z0-9]+")
-			if err != nil {
-				panic(err)
-			}
-			processedString := reg.ReplaceAllString(input, " ")
-
-			// Remove leading and trailing spaces
-			processedString = strings.TrimSpace(processedString)
-
-			// Replace spaces with dashes
-			slug := strings.ReplaceAll(processedString, " ", "-")
-
-			// Convert to lowercase
-			slug = strings.ToLower(slug)
-
-			return slug
-		},
-		"dict": func(values ...interface{}) (map[string]interface{}, error) {
-			if len(values)%2 != 0 {
-				return nil, errors.New("invalid dict call")
-			}
-			dict := make(map[string]interface{}, len(values)/2)
-			for i := 0; i < len(values); i += 2 {
-				key, ok := values[i].(string)
-				if !ok {
-					return nil, errors.New("dict keys must be strings")
-				}
-				dict[key] = values[i+1]
-			}
-			return dict, nil
-		},
-
+		"Slugify":   Slugify,
+		"dict":      ValuesToDict,
 		"json": func(path string, fieldpath string) (any, error) {
 			if path[0] == '/' {
 				return nil, fmt.Errorf("Invalid json file: %s.  Cannot start with a /", path)

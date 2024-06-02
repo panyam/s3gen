@@ -88,6 +88,10 @@ type Site struct {
 
 	CommonFuncMap htmpl.FuncMap
 
+	// Page callbacks are used by the site in a way that the resource being
+	// rendered can provide info back to the rendered to update any state
+	pageCallbacks map[string]any
+
 	// Global templates dirs
 	htmlTemplateClone *htmpl.Template
 	htmlTemplate      *htmpl.Template
@@ -98,8 +102,6 @@ type Site struct {
 	textTemplate      *ttmpl.Template
 	TextFuncMap       ttmpl.FuncMap
 	TextTemplates     []string
-
-	SiteMetadata any
 
 	// All files including published files will be served from here!
 	filesRouter *mux.Router
@@ -121,6 +123,9 @@ func (s *Site) Init() *Site {
 	}
 	if s.pages == nil {
 		s.pages = make(map[string]*Page)
+	}
+	if s.pageCallbacks == nil {
+		s.pageCallbacks = make(map[string]any)
 	}
 	return s
 }
@@ -362,6 +367,8 @@ func (s *Site) Rebuild(rs []*Resource) {
 
 		var params []string
 		if res.IsParametric {
+			log.Println("Page Is Parametric: ", res.FullPath, res.ParamValues)
+			res.LoadParamValues()
 			for _, param := range res.ParamValues {
 				params = append(params, param)
 			}
@@ -387,6 +394,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 				}
 				defer outfile.Close()
 
+				res.CurrentParamName = param
 				page := res.PageFor(param)
 
 				// Now setup the view for this page

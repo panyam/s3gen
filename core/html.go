@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	htmpl "html/template"
 	"io"
 	"log"
@@ -29,7 +30,7 @@ func NewHTMLResourceLoader(templatesDir string) *HTMLResourceLoader {
 	return h
 }
 
-func (m *HTMLResourceLoader) LoadResource(s *Site, res *Resource) error {
+func (m *HTMLResourceLoader) LoadResource(res *Resource) error {
 	base := filepath.Base(res.FullPath)
 	res.IsIndex = base == "index.htm" || base == "_index.htm" || base == "index.html" || base == "_index.html"
 	res.NeedsIndex = strings.HasSuffix(res.FullPath, ".htm") || strings.HasSuffix(res.FullPath, ".html")
@@ -39,12 +40,31 @@ func (m *HTMLResourceLoader) LoadResource(s *Site, res *Resource) error {
 
 	// if we are not parametric - then created the destination page
 	if !res.IsParametric {
-		res.DestPage = &Page{Site: s, Res: res}
+		res.DestPage = &Page{Res: res, Site: res.Site}
 		res.DestPage.LoadFrom(res)
 	} else {
 		// what
 	}
 	return nil
+}
+
+func (m *HTMLResourceLoader) LoadParamValues(res *Resource) error {
+	content, err := res.ReadAll()
+
+	tmpl, err := res.Site.TextTemplateClone().Funcs(map[string]any{}).Parse(string(content))
+	if err != nil {
+		log.Println("Error parsing template: ", err, res.FullPath)
+		return err
+	}
+	output := bytes.NewBufferString("")
+	err = tmpl.Execute(output, &MDView{Res: res})
+	if err != nil {
+		log.Println("Error executing paramvals template: ", err, res.FullPath)
+		return err
+	} else {
+		log.Println("Param Values After: ", res.ParamValues, output)
+	}
+	return err
 }
 
 // For a given resource - we need the page data to be populated

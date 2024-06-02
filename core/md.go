@@ -41,7 +41,7 @@ func NewMDResourceLoader(templatesDir string) *MDResourceLoader {
 	return h
 }
 
-func (m *MDResourceLoader) LoadResource(s *Site, res *Resource) error {
+func (m *MDResourceLoader) LoadResource(res *Resource) error {
 	base := filepath.Base(res.FullPath)
 	res.IsIndex = base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
 	res.NeedsIndex = strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx")
@@ -50,11 +50,30 @@ func (m *MDResourceLoader) LoadResource(s *Site, res *Resource) error {
 	res.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
 
 	// if we are not parametric - then created the destination page
-	if !res.IsParametric {
-		res.DestPage = &Page{Site: s, Res: res}
+	if true || !res.IsParametric {
+		res.DestPage = &Page{Res: res, Site: res.Site}
 		res.DestPage.LoadFrom(res)
 	}
 	return nil
+}
+
+func (m *MDResourceLoader) LoadParamValues(res *Resource) error {
+	content, err := res.ReadAll()
+	tmpl, err := res.Site.TextTemplateClone().Funcs(map[string]any{}).Parse(string(content))
+	if err != nil {
+		log.Println("Error parsing template: ", err, res.FullPath)
+		return err
+	}
+	output := bytes.NewBufferString("")
+
+	err = tmpl.Execute(output, &MDView{Res: res})
+	if err != nil {
+		log.Println("Error executing paramvals template: ", err, res.FullPath)
+		return err
+	} else {
+		log.Println("Param Values After: ", res.ParamValues)
+	}
+	return err
 }
 
 // For a given resource - we need the page data to be populated

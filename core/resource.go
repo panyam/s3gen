@@ -106,6 +106,9 @@ func (page *Page) LoadFrom(res *Resource) error {
 	}
 	site := page.Site
 	page.RootView = site.NewView(pageName)
+	if page.RootView == nil {
+		log.Println("Could not find view: ", pageName)
+	}
 	page.RootView.SetPage(page)
 
 	// For now we are going through "known" fields
@@ -223,18 +226,40 @@ type Resource struct {
 	// possible for this resource based on how it is loaded and its config it takes
 	// For example a blog page of the form /a/b/c/[name].md could have 10 distinct values
 	// for the "name" parameter.  Those will be populated here by the content processor
-	ParamValues []string
+	ParamValues      []string
+	CurrentParamName string
 
 	// Once ParamValues are captured, the site will render this render this resource
 	// once per Param value.   Each page will be rendered in a different location.
 	ParamPages map[string]*Page
 }
 
+func (r *Resource) AddParam(param string) *Resource {
+	r.ParamValues = append(r.ParamValues, param)
+	return r
+}
+
+func (r *Resource) AddParams(params []string) *Resource {
+	for _, param := range params {
+		r.ParamValues = append(r.ParamValues, param)
+	}
+	return r
+}
+
+func (r *Resource) LoadParamValues() {
+	s := r.Site
+	proc := s.GetResourceLoader(r)
+	if proc != nil && r.State == ResourceStateLoaded {
+		r.ParamValues = nil
+		proc.LoadParamValues(r)
+	}
+}
+
 func (r *Resource) Load() *Resource {
 	s := r.Site
 	proc := s.GetResourceLoader(r)
 	if proc != nil && r.State == ResourceStatePending {
-		r.Error = proc.LoadResource(s, r)
+		r.Error = proc.LoadResource(r)
 		if r.Error != nil {
 			log.Println("Error loading rource: ", r.Error, r.FullPath)
 		} else {
@@ -287,7 +312,10 @@ func (r *Resource) WithoutExt(all bool) string {
 func (r *Resource) Info() os.FileInfo {
 	if r.info == nil {
 		r.info, r.Error = os.Stat(r.FullPath)
-		r.State = ResourceStateFailed
+		if r.Error != nil {
+			r.State = ResourceStateFailed
+			log.Println("Error Getting Info: ", r.FullPath, r.Error)
+		}
 	}
 	return r.info
 }
@@ -351,6 +379,9 @@ func (r *Resource) PageFor(param string) *Page {
 	if param == "" {
 		return r.DestPage
 	}
+	if r.ParamPages == nil {
+		r.ParamPages = make(map[string]*Page)
+	}
 	page, ok := r.ParamPages[param]
 	if !ok || page == nil {
 		page = &Page{Site: r.Site, Res: r}
@@ -379,8 +410,10 @@ func (r *Resource) DestPathFor(param string) (destpath string) {
 
 	if r.IsParametric {
 		if param == "" {
+			log.Println("Page is parametric but param is empty: ", r.FullPath)
 			return
 		}
+
 		// if we have /a/b/c/d/[param].ext
 		// then do /a/b/c/d/param/index.html
 		// res is not a dir - eg it something like xyz.ext
