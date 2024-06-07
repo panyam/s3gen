@@ -41,8 +41,8 @@ func (s *Site) StartWatching() {
 					fullpath := event.Path
 					info, err := os.Stat(fullpath)
 					if err != nil {
-						fmt.Println(err)
-						return
+						fmt.Println("Error with file: ", event.Path, err)
+						continue
 					}
 
 					// only deal with files
