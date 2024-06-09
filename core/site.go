@@ -40,8 +40,6 @@ var ErrContentPathInvalid = fmt.Errorf("Invalid content path")
 //	}
 //	srv.ListenAndServe()
 type Site struct {
-	// What are the elements of a static site?
-
 	// ContentRoot is the root of all your pages.
 	// One structure we want to place is use folders to emphasis url structure too
 	// so a site with mysite.com/a/b/c/d
@@ -49,20 +47,11 @@ type Site struct {
 	// <ContentRoot>/a/b/c/d.<content_type>
 	ContentRoot string
 
-	// Defines where all static assets are to be used from
-	AssetsRoot string
-
 	// Final output directory where resources are generated/published to
 	OutputDir string
 
-	// A directory used by the sitegen to hold cached info etc
-	// TODO - easy to do just do sqlite?
-	CacheDir string
-
-	LiveReload bool
-	LazyLoad   bool
-
 	// The http path prefix the site is prefixed in,
+	// The site could be served from a subpath in the domain, eg:
 	// eg
 	//		myblog.com								=> PathPrefix = "/"
 	//		myblog.com/blog						=> PathPrefix = "/blog"
@@ -73,16 +62,27 @@ type Site struct {
 	// This is only needed so that the generator knows where to "root" the blog in the URL
 	PathPrefix string
 
+	// A list of folders where static files could be served from along with their
+	// http path prefixes
+	StaticFolders []string
+
 	// ResourceLoaders tell us how to "process" a content of a given type.
 	// types are denoted by extensions for now later on we could do something else
 	ResourceLoaders map[string]ResourceLoader
 
-	IgnoreDirFunc  func(dirpath string) bool
+	// When walking the content root for files, this callback specify which directories
+	// are to be ignored.
+	IgnoreDirFunc func(dirpath string) bool
+
+	// When walking the content root for files, this callback specify which files
+	// are to be ignored.
 	IgnoreFileFunc func(filepath string) bool
 
-	NewViewFunc func(name string) View
+	// Whether to enable live reload/rebuild of changed files or not
+	LiveReload bool
+	LazyLoad   bool
 
-	StaticFolders []string
+	NewViewFunc func(name string) View
 
 	BuildFrequency time.Duration
 
@@ -93,15 +93,18 @@ type Site struct {
 	pageCallbacks map[string]any
 
 	// Global templates dirs
+	// A list of GLOBs that will point to several html templates our generator will parse and use
+	HtmlTemplates []string
+
 	htmlTemplateClone *htmpl.Template
 	htmlTemplate      *htmpl.Template
 	HtmlFuncMap       htmpl.FuncMap
-	HtmlTemplates     []string
 
+	// A list of GLOBs that will point to several text templates our generator will parse and use
+	TextTemplates     []string
 	textTemplateClone *ttmpl.Template
 	textTemplate      *ttmpl.Template
 	TextFuncMap       ttmpl.FuncMap
-	TextTemplates     []string
 
 	// All files including published files will be served from here!
 	filesRouter *mux.Router
@@ -483,27 +486,4 @@ func (s *Site) GetResource(fullpath string) *Resource {
 	}
 
 	return res
-}
-
-// /////////////////// ATTIC
-
-func (s *Site) PathToDir(path string) (string, bool, error) {
-	startingDir := filepath.SplitList(s.ContentRoot)
-	minPartsNeeded := len(startingDir)
-	for _, p := range strings.Split(path, "/") {
-		if p == "." {
-			// do nothing
-		} else if p == ".." {
-			if len(startingDir) == minPartsNeeded {
-				// cannot go any further so return error
-				return "", false, ErrContentPathInvalid
-			} else {
-				startingDir = startingDir[:len(startingDir)-1]
-			}
-		} else {
-			// append to it
-			startingDir = append(startingDir, p)
-		}
-	}
-	return filepath.Join(startingDir...), true, nil
 }
