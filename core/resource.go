@@ -86,18 +86,6 @@ type Page struct {
 	Error error
 }
 
-// A ResourceBundle is a collection of resources all nested under a single
-// //  root directory.
-type ResourceBundle struct {
-	// Name of this resource bundle
-	Name string
-
-	// Root directory where the resources are nested under.
-	// Not *every* file is implicitly loaded.  To add a resource
-	// in a bundle it has to be Loaded first.
-	RootDir string
-}
-
 func (page *Page) LoadFrom(res *Resource) error {
 	frontMatter := res.FrontMatter().Data
 	pageName := "BasePage"
@@ -181,31 +169,17 @@ func (page *Page) LoadFrom(res *Resource) error {
  * Each resource in our static site is identified by a unique path.
  * Note that resources can go through multiple transformations
  * resulting in more resources - to be converted into other resources.
- * Each resource is uniquely identified by the Bundle + Path combination
+ * Each resource is uniquely identified by its full path
  */
 type Resource struct {
-	Site        *Site
-	FullPath    string // Unique URI/Path
-	BundleName  string
-	ContentType string
-
-	IsIndex      bool
-	NeedsIndex   bool
-	IsParametric bool
+	Site     *Site
+	FullPath string // Unique URI/Path
 
 	// Created timestamp on disk
 	CreatedAt time.Time
 
 	// Updated time stamp on disk
 	UpdatedAt time.Time
-
-	// will be set to when it was last processed if no errors occurred
-	ProcessedAt time.Time
-
-	// Resources this one depends on - to determine if a rebuild is needed
-	// If a resource does not depend on any others then this is a root
-	// resource
-	DependsOn map[string]bool
 
 	// Loaded, Pending, NotFound, Failed
 	State int
@@ -215,6 +189,10 @@ type Resource struct {
 
 	// Info about the resource
 	info os.FileInfo
+
+	IsIndex      bool
+	NeedsIndex   bool
+	IsParametric bool
 
 	// Marks whether front matter was loaded
 	frontMatter FrontMatter
