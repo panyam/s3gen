@@ -1,4 +1,4 @@
-package core
+package s3gen
 
 import (
 	"path/filepath"
