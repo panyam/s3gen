@@ -141,6 +141,13 @@ func (s *Site) HtmlTemplateClone() *htmpl.Template {
 	return out
 }
 
+func (s *Site) PathRelUrl(path string) string {
+	if s.PathPrefix == "" || s.PathPrefix == "/" {
+		return path
+	}
+	return s.PathPrefix + path
+}
+
 func (s *Site) TextTemplateClone() *ttmpl.Template {
 	out, err := s.textTemplateClone.Clone()
 	if err != nil {
