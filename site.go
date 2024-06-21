@@ -16,6 +16,7 @@ import (
 	ttmpl "text/template"
 
 	"github.com/gorilla/mux"
+	gfn "github.com/panyam/goutils/fn"
 	gut "github.com/panyam/goutils/utils"
 	"github.com/radovskyb/watcher"
 )
@@ -116,6 +117,8 @@ type Site struct {
 
 	resources map[string]*Resource
 	pages     map[string]*Page
+
+	initialized bool
 }
 
 func (s *Site) Init() *Site {
@@ -130,6 +133,7 @@ func (s *Site) Init() *Site {
 	if s.pageCallbacks == nil {
 		s.pageCallbacks = make(map[string]any)
 	}
+	s.initialized = true
 	return s
 }
 
@@ -214,6 +218,9 @@ func (s *Site) HtmlTemplate() *htmpl.Template {
 
 // https://benhoyt.com/writings/go-routing/#split-switch
 func (s *Site) GetRouter() *mux.Router {
+	if !s.initialized {
+		s.Init()
+	}
 	if s.filesRouter == nil {
 		s.filesRouter = mux.NewRouter()
 
@@ -287,13 +294,6 @@ func (s *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.GetRouter().ServeHTTP(w, r)
 }
 
-// Walks through all our resources and rebuilds/republishes the static site
-func (s *Site) Load() *Site {
-	foundResources := s.ListResources(nil, nil, 0, 0)
-	s.Rebuild(foundResources)
-	return s
-}
-
 func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 	sortFunc ResourceSortFunc,
 	offset int, count int) []*Resource {
@@ -358,23 +358,14 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 // all of its dependencies
 // So this is a closure operation on sets of resources each time
 func (s *Site) Rebuild(rs []*Resource) {
-	// var errors []error
+	if !s.initialized {
+		s.Init()
+	}
+	if rs == nil {
+		rs = s.ListResources(nil, nil, 0, 0)
+	}
+
 	for _, res := range rs {
-		/*
-			if strings.HasSuffix(res.FullPath, "/index.md") {
-				log.Println("Writing ", res.FullPath, "------->", outres.FullPath)
-				contents, _ := res.ReadAll()
-				log.Println("Contents: ", string(contents))
-			}
-		*/
-		if false && !strings.HasSuffix(res.FullPath, "using-databases.mdx") {
-			continue
-		}
-
-		// Should we just treat parametric pages separately after this loop?
-		// here is where seperate pages and data may be useful?
-		// pages
-
 		var params []string
 		if res.IsParametric {
 			log.Println("Page Is Parametric: ", res.FullPath, res.ParamValues)
@@ -493,4 +484,85 @@ func (s *Site) GetResource(fullpath string) *Resource {
 	}
 
 	return res
+}
+
+func (s *Site) Watch() {
+	// Always build once
+	s.Rebuild(nil)
+
+	if s.reloadWatcher == nil {
+		w := watcher.New()
+		s.reloadWatcher = w
+
+		go func() {
+			buildFreq := s.BuildFrequency
+			if buildFreq <= 0 {
+				buildFreq = 1000 * time.Millisecond
+			}
+			tickerChan := time.NewTicker(buildFreq)
+			defer tickerChan.Stop()
+
+			foundResources := make(map[string]*Resource)
+			for {
+				select {
+				case event := <-w.Event:
+					fmt.Println(event) // Print the event's info.
+					log.Println("Collecting Event: ", event)
+
+					fullpath := event.Path
+					info, err := os.Stat(fullpath)
+					if err != nil {
+						fmt.Println("Error with file: ", event.Path, err)
+						continue
+					}
+
+					// only deal with files
+					if !info.IsDir() && (s.IgnoreFileFunc == nil || !s.IgnoreFileFunc(fullpath)) {
+						res := s.GetResource(fullpath)
+						if res != nil {
+							// map fullpath to a resource here
+
+							// TODO - refer to cache if this need to be rebuilt? or let Rebuild do it?
+							foundResources[fullpath] = res
+						}
+					}
+				case err := <-w.Error:
+					log.Fatalln(err)
+				case <-w.Closed:
+					// Stop building and uit
+					return
+				case <-tickerChan.C:
+					// if we have things in the collected files - kick off a rebuild
+					if len(foundResources) > 0 {
+						log.Println("files collected so far: ", foundResources)
+
+						s.Rebuild(gfn.MapValues(foundResources))
+						// reset changed files
+						foundResources = make(map[string]*Resource)
+					}
+					break
+				}
+			}
+		}()
+
+		log.Println("Adding files recursive: ", s.ContentRoot)
+		if err := w.AddRecursive(s.ContentRoot); err != nil {
+			log.Fatalln("Error adding files recursive: ", s.ContentRoot, err)
+		}
+
+		// start the watching process
+		go func() {
+			log.Println("Starting watcher...")
+			if err := w.Start(time.Millisecond * 100); err != nil {
+				log.Fatal("Error starting watcher...", err)
+			}
+		}()
+	}
+}
+
+func (s *Site) StopWatching() {
+	if s.reloadWatcher == nil {
+		s.reloadWatcher.Close()
+		s.reloadWatcher = nil
+	}
 }
