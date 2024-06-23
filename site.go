@@ -1,8 +1,8 @@
 package s3gen
 
 import (
+	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -12,12 +12,14 @@ import (
 	"strings"
 	"time"
 
+	"html/template"
 	htmpl "html/template"
 	ttmpl "text/template"
 
 	"github.com/gorilla/mux"
 	gfn "github.com/panyam/goutils/fn"
 	gut "github.com/panyam/goutils/utils"
+	"github.com/panyam/s3gen/funcs"
 	"github.com/radovskyb/watcher"
 )
 
@@ -160,9 +162,25 @@ func (s *Site) TextTemplateClone() *ttmpl.Template {
 	return out
 }
 
+func (s *Site) DefaultFuncMap() htmpl.FuncMap {
+	return htmpl.FuncMap{
+		"RenderView": func(view View) (out template.HTML, err error) {
+			if view == nil {
+				return "", fmt.Errorf("view is nil")
+			}
+			output := bytes.NewBufferString("")
+			err = view.RenderResponse(output)
+			return template.HTML(output.String()), err
+		},
+		"json": s.Json,
+	}
+}
+
 func (s *Site) TextTemplate() *ttmpl.Template {
 	if s.textTemplate == nil {
-		s.textTemplate = ttmpl.New("SiteTextTemplate").Funcs(DefaultFuncMap(s))
+		s.textTemplate = ttmpl.New("SiteTextTemplate").
+			Funcs(s.DefaultFuncMap()).
+			Funcs(funcs.DefaultFuncMap())
 		if s.CommonFuncMap != nil {
 			s.textTemplate = s.textTemplate.Funcs(s.CommonFuncMap)
 		}
@@ -189,7 +207,9 @@ func (s *Site) TextTemplate() *ttmpl.Template {
 
 func (s *Site) HtmlTemplate() *htmpl.Template {
 	if s.htmlTemplate == nil {
-		s.htmlTemplate = htmpl.New("SiteHtmlTemplate").Funcs(DefaultFuncMap(s))
+		s.htmlTemplate = htmpl.New("SiteHtmlTemplate").
+			Funcs(s.DefaultFuncMap()).
+			Funcs(funcs.DefaultFuncMap())
 		if s.CommonFuncMap != nil {
 			s.htmlTemplate = s.htmlTemplate.Funcs(s.CommonFuncMap)
 		}
@@ -422,17 +442,6 @@ func (s *Site) Rebuild(rs []*Resource) {
 			}
 		}
 	}
-}
-
-// Site extension to render a view
-func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
-	if templateName == "" {
-		templateName = v.TemplateName()
-	}
-	if templateName != "" {
-		return s.HtmlTemplate().ExecuteTemplate(writer, templateName, v)
-	}
-	return v.RenderResponse(writer)
 }
 
 func (s *Site) NewView(name string) (view View) {

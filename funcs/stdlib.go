@@ -1,4 +1,4 @@
-package s3gen
+package funcs
 
 import (
 	"errors"
