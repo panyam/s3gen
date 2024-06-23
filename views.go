@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"time"
 
 	"github.com/morrisxyang/xreflect"
 )
@@ -19,6 +20,7 @@ type View interface {
 	AddChildViews(views ...View)
 	ChildViews() []View
 	SelfView() View
+	ViewId() string
 	GetPage() any
 	SetPage(any)
 }
@@ -58,6 +60,7 @@ func GetViewProp(view View, fieldpath ...any) any {
 
 type BaseView struct {
 	Parent   View
+	Id       string
 	Site     *Site
 	Template string
 	Children []View
@@ -71,6 +74,10 @@ func (v *BaseView) SelfView() View {
 
 func (v *BaseView) ParentView() View {
 	return v.Parent
+}
+
+func (v *BaseView) ViewId() string {
+	return v.Id
 }
 
 func (v *BaseView) ChildViews() []View {
@@ -102,6 +109,9 @@ func (v *BaseView) SetPage(p any) {
 func (v *BaseView) InitView(s *Site, parent View) {
 	v.Site = s
 	v.Parent = parent
+	if v.Id == "" {
+		v.Id = fmt.Sprintf("view_%d", time.Now().UnixMilli())
+	}
 	if v.Children != nil {
 		for _, child := range v.Children {
 			if child == nil {
