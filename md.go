@@ -95,17 +95,6 @@ func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) 
 		location = frontMatter["location"].(string)
 	}
 
-	/*
-		wrapper := ""
-		if frontMatter["wrapper"] != nil {
-			wrapper = frontMatter["wrapper"].(string)
-		}
-		if wrapper != "" {
-			// then create another view such that its BodyView
-			WrapperView{BaseView: BaseView{Template: wrapper}}
-		}
-	*/
-
 	mdview := &MDView{Res: res, Page: page}
 	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
 	// defer log.Println("After pageName, location: ", pageName, location, page.RootView)
