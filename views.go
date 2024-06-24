@@ -7,14 +7,13 @@ import (
 	"net/http"
 	"reflect"
 	"time"
-
-	"github.com/morrisxyang/xreflect"
 )
 
 type View interface {
 	InitView(site *Site, parentView View)
 	ValidateRequest(w http.ResponseWriter, r *http.Request) error
 	RenderResponse(writer io.Writer) (err error)
+	SetTemplate(templateName string)
 	TemplateName() string
 	ParentView() View
 	AddChildViews(views ...View)
@@ -23,39 +22,6 @@ type View interface {
 	ViewId() string
 	GetPage() any
 	SetPage(any)
-}
-
-func SetViewProp(obj any, value any, fieldpath string) error {
-	return xreflect.SetEmbedField(obj, fieldpath, value)
-	/*
-			var prev reflect.Value
-			curr := reflect.ValueOf(view)
-			for i, fpart := range fieldpath {
-				prev = curr
-				currtype := curr.Type()
-				currkind := curr.Kind()
-				log.Println("Type: ", currtype, currtype.Name(), currkind)
-				if reflect.TypeOf(fpart).String() == "string" {
-					if currkind == reflect.Ptr {
-						curr = curr.Elem()
-					}
-					curr = curr.FieldByName(fpart.(string))
-				} else {
-					curr = curr.Index(fpart.(int))
-				}
-				if !curr.IsValid() {
-					log.Println("Is Valid is false: ", i, len(fieldpath))
-					if i == len(fieldpath)-1 {
-						// At the end so we can set this
-					}
-				}
-			}
-		log.Println("end of loop, curr: ", prev, curr, view, fieldpath)
-	*/
-}
-
-func GetViewProp(view View, fieldpath ...any) any {
-	return nil
 }
 
 type BaseView struct {
@@ -82,6 +48,10 @@ func (v *BaseView) ViewId() string {
 
 func (v *BaseView) ChildViews() []View {
 	return v.Children
+}
+
+func (v *BaseView) SetTemplate(templateName string) {
+	v.Template = templateName
 }
 
 func (v *BaseView) TemplateName() string {

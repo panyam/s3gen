@@ -23,146 +23,14 @@ const (
 
 type ResourceFilterFunc func(res *Resource) bool
 type ResourceSortFunc func(a *Resource, b *Resource) bool
-type PageFilterFunc func(res *Page) bool
-type PageSortFunc func(a *Page, b *Page) bool
+
+// type PageFilterFunc func(res *Page) bool
+// type PageSortFunc func(a *Page, b *Page) bool
 
 type FrontMatter struct {
 	Loaded bool
 	Data   map[string]any
 	Length int64
-}
-
-// Our interface for returning all static content in our site
-type ResourceService interface {
-	GetResource(fullpath string) *Resource
-	ListResources(filterFunc func(res *Resource) bool,
-		sortFunc func(a *Resource, b *Resource) bool,
-		offset int, count int) []*Resource
-	ListPages(filterFunc func(res *Page) bool,
-		sortFunc func(a *Page, b *Page) bool,
-		offset int, count int) []*Page
-}
-
-// A page in our site.  These are what are finally rendered.
-type Page struct {
-	// Site this page belongs to - can this be in multiple - then create different
-	// page instances
-	Site *Site
-
-	// The slug url for this page
-	Slug string
-
-	Title string
-
-	Link string
-
-	Summary string
-
-	CreatedAt time.Time
-	UpdatedAt time.Time
-
-	IsDraft bool
-
-	CanonicalUrl string
-
-	Tags []string
-
-	// The resource that corresponds to this page
-	// TODO - Should this be just the root resource or all resources for it?
-	Res *Resource
-	// DestRes *Resource
-
-	// Tells whether this is a detail page or a listing page
-	IsListPage bool
-
-	// The root view that corresponds to this page
-	// By default - we use the BasePage view
-	RootView View
-
-	// Loaded, Pending, NotFound, Failed
-	State int
-
-	// Any errors with this resource
-	Error error
-}
-
-func (page *Page) LoadFrom(res *Resource) error {
-	frontMatter := res.FrontMatter().Data
-	pageName := "BasePage"
-	if frontMatter["page"] != nil && frontMatter["page"] != "" {
-		pageName = frontMatter["page"].(string)
-	}
-	site := page.Site
-	page.RootView = site.NewView(pageName)
-	if page.RootView == nil {
-		log.Println("Could not find view: ", pageName)
-	}
-	page.RootView.SetPage(page)
-
-	// For now we are going through "known" fields
-	// TODO - just do this by dynamically going through all fields in FM
-	// and calling SetViewProps and fail if this field doesnt exist - or using struct tags
-	var err error
-	if val, ok := frontMatter["tags"]; val != nil && ok {
-		SetViewProp(page, gfn.Map(val.([]any), func(v any) string { return v.(string) }), "Tags")
-	}
-	if val, ok := frontMatter["title"]; val != nil && ok {
-		page.Title = val.(string)
-	}
-	if val, ok := frontMatter["summary"]; val != nil && ok {
-		page.Summary = val.(string)
-	}
-	if val, ok := frontMatter["date"]; val != nil && ok {
-		// create at
-		if val.(string) != "" {
-			if page.CreatedAt, err = time.Parse("2006-1-2T03:04:05PM", val.(string)); err != nil {
-				log.Println("error parsing created time: ", err)
-			}
-		}
-	}
-
-	if val, ok := frontMatter["lastmod"]; val != nil && ok {
-		// update at
-		if val.(string) != "" {
-			if page.UpdatedAt, err = time.Parse("2006-1-2", val.(string)); err != nil {
-				log.Println("error parsing last mod time: ", err)
-			}
-		}
-	}
-
-	if val, ok := frontMatter["draft"]; val != nil && ok {
-		// update at
-		page.IsDraft = val.(bool)
-	}
-
-	// see if we can calculate the slug and link urls
-	page.Slug = ""
-	relpath := ""
-	resdir := res.DirName()
-	if res.IsIndex {
-		relpath, err = filepath.Rel(site.ContentRoot, resdir)
-		if err != nil {
-			return err
-		}
-	} else {
-		fp := res.WithoutExt(true)
-		relpath, err = filepath.Rel(site.ContentRoot, fp)
-		if err != nil {
-			return err
-		}
-	}
-	if relpath == "." {
-		relpath = ""
-	}
-	if relpath == "" {
-		relpath = "/"
-	}
-	if relpath[0] == '/' {
-		page.Link = fmt.Sprintf("%s%s", site.PathPrefix, relpath)
-	} else {
-		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
-	}
-	return nil
 }
 
 /**
@@ -430,4 +298,166 @@ func (r *Resource) DestPathFor(param string) (destpath string) {
 		}
 	}
 	return
+}
+
+// A page in our site.  These are what are finally rendered.
+type Page struct {
+	// Site this page belongs to - can this be in multiple - then create different
+	// page instances
+	Site *Site
+
+	// The slug url for this page
+	Slug string
+
+	Title string
+
+	Link string
+
+	Summary string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	IsDraft bool
+
+	CanonicalUrl string
+
+	Tags []string
+
+	// The resource that corresponds to this page
+	// TODO - Should this be just the root resource or all resources for it?
+	Res *Resource
+	// DestRes *Resource
+
+	// Tells whether this is a detail page or a listing page
+	IsListPage bool
+
+	// The root view that corresponds to this page
+	// By default - we use the BasePage view
+	RootView View
+
+	// Loaded, Pending, NotFound, Failed
+	State int
+
+	// Any errors with this resource
+	Error error
+}
+
+func (page *Page) LoadFrom(res *Resource) error {
+	frontMatter := res.FrontMatter().Data
+	pageName := "BasePage"
+	if frontMatter["page"] != nil && frontMatter["page"] != "" {
+		pageName = frontMatter["page"].(string)
+	}
+	site := page.Site
+	page.RootView = site.NewView(pageName)
+	if page.RootView == nil {
+		log.Println("Could not find view: ", pageName)
+	}
+	page.RootView.SetPage(page)
+
+	// For now we are going through "known" fields
+	// TODO - just do this by dynamically going through all fields in FM
+	// and calling SetNestedProps and fail if this field doesnt exist - or using struct tags
+	var err error
+	if val, ok := frontMatter["tags"]; val != nil && ok {
+		SetNestedProp(page, gfn.Map(val.([]any), func(v any) string { return v.(string) }), "Tags")
+	}
+	if val, ok := frontMatter["title"]; val != nil && ok {
+		page.Title = val.(string)
+	}
+	if val, ok := frontMatter["summary"]; val != nil && ok {
+		page.Summary = val.(string)
+	}
+	if val, ok := frontMatter["date"]; val != nil && ok {
+		// create at
+		if val.(string) != "" {
+			if page.CreatedAt, err = time.Parse("2006-1-2T03:04:05PM", val.(string)); err != nil {
+				log.Println("error parsing created time: ", err)
+			}
+		}
+	}
+
+	if val, ok := frontMatter["lastmod"]; val != nil && ok {
+		// update at
+		if val.(string) != "" {
+			if page.UpdatedAt, err = time.Parse("2006-1-2", val.(string)); err != nil {
+				log.Println("error parsing last mod time: ", err)
+			}
+		}
+	}
+
+	if val, ok := frontMatter["draft"]; val != nil && ok {
+		// update at
+		page.IsDraft = val.(bool)
+	}
+
+	// see if we can calculate the slug and link urls
+	page.Slug = ""
+	relpath := ""
+	resdir := res.DirName()
+	if res.IsIndex {
+		relpath, err = filepath.Rel(site.ContentRoot, resdir)
+		if err != nil {
+			return err
+		}
+	} else {
+		fp := res.WithoutExt(true)
+		relpath, err = filepath.Rel(site.ContentRoot, fp)
+		if err != nil {
+			return err
+		}
+	}
+	if relpath == "." {
+		relpath = ""
+	}
+	if relpath == "" {
+		relpath = "/"
+	}
+	if relpath[0] == '/' {
+		page.Link = fmt.Sprintf("%s%s", site.PathPrefix, relpath)
+	} else {
+		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
+	}
+	return nil
+}
+
+// Loads a resource of diferent types from storage
+type ResourceLoader interface {
+	// Loads resource data from the appropriate input path
+	LoadResource(r *Resource) error
+
+	// Loads the parameter values for a resource
+	// This is seperate from the resource as this is called only for
+	// a paraametric page.  Typically parametric pages will need to know
+	// about everything else in the site so the site and its (leaf) resource
+	// has to be loaded before this is called.  Hence it is seperated from
+	// the normal (leaf) load of a resource.  If the load is successful
+	// thenthe r.ParamValues is set to all the parametrics this page can take
+	// otherwise an error is returned
+	LoadParamValues(r *Resource) error
+
+	// Sets up the view for a page
+	SetupPageView(res *Resource, page *Page) (err error)
+}
+
+type DefaultResourceLoader struct {
+}
+
+func (m *DefaultResourceLoader) IsParametric(res *Resource) bool {
+	we := res.WithoutExt(true)
+	base := filepath.Base(we)
+	return base[0] == '[' && base[len(base)-1] == ']'
+}
+
+func (m *DefaultResourceLoader) LoadPage(res *Resource, page *Page) error {
+	return nil
+}
+
+func (m *DefaultResourceLoader) LoadParamValues(res *Resource) error {
+	return nil
+}
+
+func (m *DefaultResourceLoader) SetupPageView(res *Resource, page *Page) (err error) {
+	return nil
 }

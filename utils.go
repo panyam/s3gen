@@ -7,8 +7,13 @@ import (
 	"io"
 	"path/filepath"
 
+	"github.com/morrisxyang/xreflect"
 	gut "github.com/panyam/goutils/utils"
 )
+
+func SetNestedProp(obj any, value any, fieldpath string) error {
+	return xreflect.SetEmbedField(obj, fieldpath, value)
+}
 
 // Site extension to render a view
 func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
