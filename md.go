@@ -109,7 +109,7 @@ func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) 
 	mdview := &MDView{Res: res, Page: page}
 	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
 	// defer log.Println("After pageName, location: ", pageName, location, page.RootView)
-	return SetViewProp(page.RootView, mdview, location)
+	return SetNestedProp(page.RootView, mdview, location)
 }
 
 // A view that renders a Markdown
@@ -163,7 +163,7 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
 			parser.WithASTTransformers(
-				util.Prioritized(&PreCodeWrapper{}, 100),
+				util.Prioritized(&preCodeWrapper{}, 100),
 			),
 		),
 		goldmark.WithRendererOptions(
@@ -189,10 +189,10 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 
 // A goldmark AST transformer that wraps the <pre> block inside a div that allows copy-pasting
 // of underlying code
-type PreCodeWrapper struct {
+type preCodeWrapper struct {
 }
 
-func (t *PreCodeWrapper) Transform(doc *ast.Document, reader text.Reader, ctx parser.Context) {
+func (t *preCodeWrapper) Transform(doc *ast.Document, reader text.Reader, ctx parser.Context) {
 	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil

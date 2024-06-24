@@ -100,7 +100,7 @@ func (m *HTMLResourceLoader) SetupPageView(res *Resource, page *Page) (err error
 	view := &HTMLView{Res: res, Page: page}
 	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
 	// defer log.Println("After pageName, location: ", pageName, location, page.RootView)
-	return SetViewProp(page.RootView, view, location)
+	return SetNestedProp(page.RootView, view, location)
 }
 
 // A view that renders a Markdown
