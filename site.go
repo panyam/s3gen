@@ -236,6 +236,12 @@ func (s *Site) HtmlTemplate() *htmpl.Template {
 	return s.htmlTemplate
 }
 
+func (s *Site) HandleStatic(path, folder string) *Site {
+	s.StaticFolders = append(s.StaticFolders, path)
+	s.StaticFolders = append(s.StaticFolders, folder)
+	return s
+}
+
 // https://benhoyt.com/writings/go-routing/#split-switch
 func (s *Site) GetRouter() *mux.Router {
 	if !s.initialized {
