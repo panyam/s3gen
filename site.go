@@ -3,11 +3,13 @@ package s3gen
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -169,7 +171,7 @@ func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 				return "", fmt.Errorf("view is nil")
 			}
 			output := bytes.NewBufferString("")
-			err = view.RenderResponse(output)
+			err = s.RenderView(output, view, "")
 			return template.HTML(output.String()), err
 		},
 		"json": s.Json,
@@ -580,4 +582,69 @@ func (s *Site) StopWatching() {
 		s.reloadWatcher.Close()
 		s.reloadWatcher = nil
 	}
+}
+
+// Site extension to render a view
+func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
+	if templateName == "" {
+		templateName = v.TemplateName()
+	}
+	if templateName == "" {
+		templateName = s.DefaultViewTemplate(v)
+		if s.HtmlTemplate().Lookup(templateName) == nil {
+			templateName = templateName + ".html"
+		}
+		if s.HtmlTemplate().Lookup(templateName) != nil {
+			err := s.HtmlTemplate().ExecuteTemplate(writer, templateName, v)
+			if err != nil {
+				log.Println("Error with e.Name().html, Error: ", templateName, err)
+				_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
+			}
+			return err
+		}
+		templateName = ""
+	}
+	if templateName != "" {
+		return s.HtmlTemplate().ExecuteTemplate(writer, templateName, v)
+	}
+	// How do you use the View's renderer func here?
+	fmt.Fprintf(writer, "No Rendered Found")
+	return v.RenderResponse(writer)
+}
+
+func (s *Site) DefaultViewTemplate(v View) string {
+	t := reflect.TypeOf(v)
+	e := t.Elem()
+	return e.Name()
+}
+
+// Renders a html template
+func (s *Site) RenderHtml(templateName string, params map[string]any) (template.HTML, error) {
+	out := bytes.NewBufferString("")
+	err := s.HtmlTemplate().ExecuteTemplate(out, templateName, params)
+	return template.HTML(out.String()), err
+}
+
+// Renders a text template
+func (s *Site) RenderText(templateName string, params map[string]any) (template.HTML, error) {
+	out := bytes.NewBufferString("")
+	err := s.TextTemplate().ExecuteTemplate(out, templateName, params)
+	return template.HTML(out.String()), err
+}
+
+func (s *Site) Json(path string, fieldpath string) (any, error) {
+	if path[0] == '/' {
+		return nil, fmt.Errorf("Invalid json file: %s.  Cannot start with a /", path)
+	}
+	fullpath := gut.ExpandUserPath(filepath.Join(s.ContentRoot, path))
+	res := s.GetResource(fullpath)
+	if res.Ext() != ".json" {
+		return nil, fmt.Errorf("Invalid json file: %s, Ext: %s", fullpath, res.Ext())
+	}
+
+	data, err := res.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	return gut.JsonDecodeBytes(data)
 }

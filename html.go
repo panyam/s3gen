@@ -114,13 +114,6 @@ type HTMLView struct {
 	Res *Resource
 }
 
-func (v *HTMLView) InitView(site *Site, parentView View) {
-	if v.Self == nil {
-		v.Self = v
-	}
-	v.BaseView.InitView(site, parentView)
-}
-
 func (v *HTMLView) RenderResponse(writer io.Writer) (err error) {
 	res := v.Res
 	mdfile, _ := res.Reader()

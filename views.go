@@ -3,22 +3,19 @@ package s3gen
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"reflect"
 	"time"
 )
 
 type View interface {
 	InitView(site *Site, parentView View)
 	ValidateRequest(w http.ResponseWriter, r *http.Request) error
-	RenderResponse(writer io.Writer) (err error)
 	SetTemplate(templateName string)
 	TemplateName() string
 	ParentView() View
+	RenderResponse(writer io.Writer) error
 	AddChildViews(views ...View)
 	ChildViews() []View
-	SelfView() View
 	ViewId() string
 	GetPage() any
 	SetPage(any)
@@ -30,12 +27,7 @@ type BaseView struct {
 	Site     *Site
 	Template string
 	Children []View
-	Self     View
 	Page     any
-}
-
-func (v *BaseView) SelfView() View {
-	return v.Self
 }
 
 func (v *BaseView) ParentView() View {
@@ -110,24 +102,5 @@ func (v *BaseView) AddChildViews(views ...View) {
 }
 
 func (v *BaseView) RenderResponse(writer io.Writer) (err error) {
-	// log.Println("T: ", t, t.Kind())
-	// log.Println("E: ", e, "Kind: ", e.Kind(), "Name: ", e.Name(), "PkgPath: ", e.PkgPath())
-	if v.TemplateName() == "" {
-		t := reflect.TypeOf(v.Self)
-		e := t.Elem()
-		// use the type here
-		err := v.Site.HtmlTemplate().ExecuteTemplate(writer, e.Name(), v.Self)
-		if err != nil {
-			log.Println("Error with e.Name(), Error: ", e.Name(), err)
-			// try with the .html name
-			err = v.Site.HtmlTemplate().ExecuteTemplate(writer, e.Name()+".html", v.Self)
-		}
-		if err != nil {
-			log.Println("Error with e.Name().html, Error: ", e.Name(), err)
-			_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
-		}
-	} else {
-		return v.Site.HtmlTemplate().ExecuteTemplate(writer, v.TemplateName(), v.Self)
-	}
-	return
+	return nil
 }
