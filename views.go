@@ -7,57 +7,63 @@ import (
 	"time"
 )
 
-type View interface {
-	InitView(site *Site, parentView View)
-	ValidateRequest(w http.ResponseWriter, r *http.Request) error
+type ViewTemplater interface {
 	SetTemplate(templateName string)
 	TemplateName() string
-	ParentView() View
-	RenderResponse(writer io.Writer) error
-	AddChildViews(views ...View)
-	ChildViews() []View
-	ViewId() string
+}
+
+type ViewContainer[Context any] interface {
+	ParentView() View[Context]
+	AddChildViews(views ...View[Context])
+	ChildViews() []View[Context]
+	RootView() View[Context]
+}
+
+type ViewPager interface {
 	GetPage() any
 	SetPage(any)
 }
 
-type BaseView struct {
-	Parent   View
+type View[Context any] interface {
+	ViewPager
+	ViewContainer[Context]
+	ViewTemplater
+
+	ViewId() string
+	InitView(context Context, parentView View[Context])
+	ValidateRequest(w http.ResponseWriter, r *http.Request) error
+	RenderResponse(writer io.Writer) error
+}
+
+type BaseView[Context any] struct {
+	Parent   View[Context]
 	Id       string
-	Site     *Site
+	Context  Context
 	Template string
-	Children []View
+	Children []View[Context]
 	Page     any
 }
 
-func (v *BaseView) ParentView() View {
-	return v.Parent
-}
-
-func (v *BaseView) ViewId() string {
+func (v *BaseView[C]) ViewId() string {
 	return v.Id
 }
 
-func (v *BaseView) ChildViews() []View {
-	return v.Children
-}
-
-func (v *BaseView) SetTemplate(templateName string) {
+func (v *BaseView[C]) SetTemplate(templateName string) {
 	v.Template = templateName
 }
 
-func (v *BaseView) TemplateName() string {
+func (v *BaseView[C]) TemplateName() string {
 	return v.Template
 }
 
-func (v *BaseView) GetPage() any {
+func (v *BaseView[C]) GetPage() any {
 	if v.Page == nil && v.Parent != nil {
 		return v.Parent.GetPage()
 	}
 	return v.Page
 }
 
-func (v *BaseView) SetPage(p any) {
+func (v *BaseView[C]) SetPage(p any) {
 	v.Page = p
 	if v.Children != nil {
 		for _, child := range v.Children {
@@ -68,8 +74,8 @@ func (v *BaseView) SetPage(p any) {
 	}
 }
 
-func (v *BaseView) InitView(s *Site, parent View) {
-	v.Site = s
+func (v *BaseView[C]) InitView(s C, parent View[C]) {
+	v.Context = s
 	v.Parent = parent
 	if v.Id == "" {
 		v.Id = fmt.Sprintf("view_%d", time.Now().UnixMilli())
@@ -85,7 +91,8 @@ func (v *BaseView) InitView(s *Site, parent View) {
 	}
 }
 
-func (v *BaseView) ValidateRequest(w http.ResponseWriter, r *http.Request) (err error) {
+// Sometimes a view may want to validate a request.
+func (v *BaseView[C]) ValidateRequest(w http.ResponseWriter, r *http.Request) (err error) {
 	for _, child := range v.Children {
 		err = child.ValidateRequest(w, r)
 		if err != nil {
@@ -95,12 +102,28 @@ func (v *BaseView) ValidateRequest(w http.ResponseWriter, r *http.Request) (err 
 	return
 }
 
-func (v *BaseView) AddChildViews(views ...View) {
+func (v *BaseView[C]) RenderResponse(writer io.Writer) (err error) {
+	return nil
+}
+
+func (v *BaseView[C]) AddChildViews(views ...View[C]) {
 	for _, child := range views {
 		v.Children = append(v.Children, child)
 	}
 }
 
-func (v *BaseView) RenderResponse(writer io.Writer) (err error) {
-	return nil
+func (v *BaseView[C]) ParentView() View[C] {
+	return v.Parent
+}
+
+func (v *BaseView[C]) ChildViews() []View[C] {
+	return v.Children
+}
+
+func (v *BaseView[C]) RootView() View[C] {
+	if v.Parent == nil {
+		return v
+	}
+	// TODO - cache this
+	return v.RootView()
 }

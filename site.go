@@ -87,7 +87,7 @@ type Site struct {
 	LiveReload bool
 	LazyLoad   bool
 
-	NewViewFunc func(name string) View
+	NewViewFunc func(name string) View[*Site]
 
 	BuildFrequency time.Duration
 
@@ -166,7 +166,7 @@ func (s *Site) TextTemplateClone() *ttmpl.Template {
 
 func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 	return htmpl.FuncMap{
-		"RenderView": func(view View) (out template.HTML, err error) {
+		"RenderView": func(view View[*Site]) (out template.HTML, err error) {
 			if view == nil {
 				return "", fmt.Errorf("view is nil")
 			}
@@ -452,7 +452,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 	}
 }
 
-func (s *Site) NewView(name string) (view View) {
+func (s *Site) NewView(name string) (view View[*Site]) {
 	// TODO - register by caller or have defaults instead of hard coding
 	// Leading to themes
 	if s.NewViewFunc != nil {
@@ -585,7 +585,7 @@ func (s *Site) StopWatching() {
 }
 
 // Site extension to render a view
-func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
+func (s *Site) RenderView(writer io.Writer, v View[*Site], templateName string) error {
 	if templateName == "" {
 		templateName = v.TemplateName()
 	}
@@ -612,7 +612,7 @@ func (s *Site) RenderView(writer io.Writer, v View, templateName string) error {
 	return v.RenderResponse(writer)
 }
 
-func (s *Site) DefaultViewTemplate(v View) string {
+func (s *Site) DefaultViewTemplate(v View[*Site]) string {
 	t := reflect.TypeOf(v)
 	e := t.Elem()
 	return e.Name()

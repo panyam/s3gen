@@ -105,7 +105,7 @@ func (m *HTMLResourceLoader) SetupPageView(res *Resource, page *Page) (err error
 
 // A view that renders a Markdown
 type HTMLView struct {
-	BaseView
+	BaseView[*Site]
 
 	// Page we are rendering into
 	Page *Page
@@ -120,7 +120,7 @@ func (v *HTMLView) RenderResponse(writer io.Writer) (err error) {
 	mddata, _ := io.ReadAll(mdfile)
 	defer mdfile.Close()
 
-	mdTemplate, err := v.Site.HtmlTemplateClone().Parse(string(mddata))
+	mdTemplate, err := v.Context.HtmlTemplateClone().Parse(string(mddata))
 	if err != nil {
 		slog.Error("Template Clone Error: ", "error", err)
 		return err

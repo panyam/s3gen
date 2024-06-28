@@ -103,7 +103,7 @@ func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) 
 
 // A view that renders a Markdown
 type MDView struct {
-	BaseView
+	BaseView[*Site]
 
 	// Page we are rendering into
 	Page *Page
@@ -118,7 +118,7 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 	mddata, _ := io.ReadAll(mdfile)
 	defer mdfile.Close()
 
-	mdTemplate, err := v.Site.TextTemplate().Parse(string(mddata))
+	mdTemplate, err := v.Context.TextTemplate().Parse(string(mddata))
 	if err != nil {
 		slog.Error("Template Parse Error: ", "error", err)
 		return err

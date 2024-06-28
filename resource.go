@@ -334,7 +334,7 @@ type Page struct {
 
 	// The root view that corresponds to this page
 	// By default - we use the BasePage view
-	RootView View
+	RootView View[*Site]
 
 	// Loaded, Pending, NotFound, Failed
 	State int
