@@ -17,7 +17,6 @@ type ViewContainer[Context any] interface {
 	ParentView() View[Context]
 	AddChildViews(views ...View[Context])
 	ChildViews() []View[Context]
-	RootView() View[Context]
 }
 
 type ViewPager interface {
@@ -118,12 +117,4 @@ func (v *BaseView[C]) ParentView() View[C] {
 
 func (v *BaseView[C]) ChildViews() []View[C] {
 	return v.Children
-}
-
-func (v *BaseView[C]) RootView() View[C] {
-	if v.Parent == nil {
-		return v
-	}
-	// TODO - cache this
-	return v.RootView()
 }
