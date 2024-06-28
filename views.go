@@ -7,9 +7,10 @@ import (
 	"time"
 )
 
-type ViewTemplater interface {
+type ViewRenderer interface {
 	SetTemplate(templateName string)
 	TemplateName() string
+	RenderResponse(writer io.Writer) error
 }
 
 type ViewContainer[Context any] interface {
@@ -27,12 +28,11 @@ type ViewPager interface {
 type View[Context any] interface {
 	ViewPager
 	ViewContainer[Context]
-	ViewTemplater
+	ViewRenderer
 
 	ViewId() string
 	InitView(context Context, parentView View[Context])
 	ValidateRequest(w http.ResponseWriter, r *http.Request) error
-	RenderResponse(writer io.Writer) error
 }
 
 type BaseView[Context any] struct {

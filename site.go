@@ -166,7 +166,7 @@ func (s *Site) TextTemplateClone() *ttmpl.Template {
 
 func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 	return htmpl.FuncMap{
-		"RenderView": func(view View[*Site]) (out template.HTML, err error) {
+		"RenderView": func(view ViewRenderer) (out template.HTML, err error) {
 			if view == nil {
 				return "", fmt.Errorf("view is nil")
 			}
@@ -585,7 +585,7 @@ func (s *Site) StopWatching() {
 }
 
 // Site extension to render a view
-func (s *Site) RenderView(writer io.Writer, v View[*Site], templateName string) error {
+func (s *Site) RenderView(writer io.Writer, v ViewRenderer, templateName string) error {
 	if templateName == "" {
 		templateName = v.TemplateName()
 	}
@@ -612,7 +612,7 @@ func (s *Site) RenderView(writer io.Writer, v View[*Site], templateName string) 
 	return v.RenderResponse(writer)
 }
 
-func (s *Site) DefaultViewTemplate(v View[*Site]) string {
+func (s *Site) DefaultViewTemplate(v ViewRenderer) string {
 	t := reflect.TypeOf(v)
 	e := t.Elem()
 	return e.Name()
