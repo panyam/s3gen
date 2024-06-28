@@ -608,7 +608,6 @@ func (s *Site) RenderView(writer io.Writer, v ViewRenderer, templateName string)
 		return s.HtmlTemplate().ExecuteTemplate(writer, templateName, v)
 	}
 	// How do you use the View's renderer func here?
-	fmt.Fprintf(writer, "No Rendered Found")
 	return v.RenderResponse(writer)
 }
 
