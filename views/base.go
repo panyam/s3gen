@@ -1,4 +1,4 @@
-package s3gen
+package views
 
 import (
 	"fmt"

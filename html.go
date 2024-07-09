@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+
+	"github.com/panyam/s3gen/views"
 )
 
 type HTMLResourceLoader struct {
@@ -105,7 +107,7 @@ func (m *HTMLResourceLoader) SetupPageView(res *Resource, page *Page) (err error
 
 // A view that renders a Markdown
 type HTMLView struct {
-	BaseView[*Site]
+	views.BaseView[*Site]
 
 	// Page we are rendering into
 	Page *Page

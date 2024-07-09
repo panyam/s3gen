@@ -11,6 +11,7 @@ import (
 
 	"github.com/adrg/frontmatter"
 	gfn "github.com/panyam/goutils/fn"
+	"github.com/panyam/s3gen/views"
 )
 
 const (
@@ -334,7 +335,7 @@ type Page struct {
 
 	// The root view that corresponds to this page
 	// By default - we use the BasePage view
-	RootView View[*Site]
+	RootView views.View[*Site]
 
 	// Loaded, Pending, NotFound, Failed
 	State int

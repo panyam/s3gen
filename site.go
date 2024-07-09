@@ -22,28 +22,17 @@ import (
 	gfn "github.com/panyam/goutils/fn"
 	gut "github.com/panyam/goutils/utils"
 	"github.com/panyam/s3gen/funcs"
+	"github.com/panyam/s3gen/views"
 	"github.com/radovskyb/watcher"
 )
 
 var ErrContentPathInvalid = fmt.Errorf("Invalid content path")
 
-// Our static site type that holds metadata about all input directories
-// output directories, implicit/explict routes, templates, etc
-// Unlike a dynamic site served by go routers etc, the point of this
-// is to use the same routers but to generate all this as static content
-// so we can serve them directly without needing a router - faster/cdn
-// and other benefits
-
-// Usage:
-//
-//	router = mux.NewRouter()
-//	s := Site{.....}
-//	s.SetupRoutes.filesRouter)
-//	srv := http.Server{
-//		Processor: router,
-//	 Addr: ":8080",
-//	}
-//	srv.ListenAndServe()
+// The site object is one of the most central types in s3gen.  It contains all configuration
+// metadata for the site (eg input/output directories, template directories, static routes etc).
+// The Site is the central point for managing the building, live reloading, templating etc needed
+// to build and serve a static site.  This Site object also provides a http.HandlerFunc which can
+// be used to server it via a http.Server.
 type Site struct {
 	// ContentRoot is the root of all your pages.
 	// One structure we want to place is use folders to emphasis url structure too
@@ -87,7 +76,7 @@ type Site struct {
 	LiveReload bool
 	LazyLoad   bool
 
-	NewViewFunc func(name string) View[*Site]
+	NewViewFunc func(name string) views.View[*Site]
 
 	BuildFrequency time.Duration
 
@@ -166,7 +155,7 @@ func (s *Site) TextTemplateClone() *ttmpl.Template {
 
 func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 	return htmpl.FuncMap{
-		"RenderView": func(view ViewRenderer) (out template.HTML, err error) {
+		"RenderView": func(view views.ViewRenderer) (out template.HTML, err error) {
 			if view == nil {
 				return "", fmt.Errorf("view is nil")
 			}
@@ -452,7 +441,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 	}
 }
 
-func (s *Site) NewView(name string) (view View[*Site]) {
+func (s *Site) NewView(name string) (view views.View[*Site]) {
 	// TODO - register by caller or have defaults instead of hard coding
 	// Leading to themes
 	if s.NewViewFunc != nil {
@@ -585,7 +574,7 @@ func (s *Site) StopWatching() {
 }
 
 // Site extension to render a view
-func (s *Site) RenderView(writer io.Writer, v ViewRenderer, templateName string) error {
+func (s *Site) RenderView(writer io.Writer, v views.ViewRenderer, templateName string) error {
 	if templateName == "" {
 		templateName = v.TemplateName()
 	}
@@ -611,7 +600,7 @@ func (s *Site) RenderView(writer io.Writer, v ViewRenderer, templateName string)
 	return v.RenderResponse(writer)
 }
 
-func (s *Site) DefaultViewTemplate(v ViewRenderer) string {
+func (s *Site) DefaultViewTemplate(v views.ViewRenderer) string {
 	t := reflect.TypeOf(v)
 	e := t.Elem()
 	return e.Name()

@@ -10,6 +10,7 @@ import (
 	ttmpl "text/template"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
+	"github.com/panyam/s3gen/views"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	"github.com/yuin/goldmark/ast"
@@ -103,7 +104,7 @@ func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) 
 
 // A view that renders a Markdown
 type MDView struct {
-	BaseView[*Site]
+	views.BaseView[*Site]
 
 	// Page we are rendering into
 	Page *Page
