@@ -29,4 +29,3 @@ TBD
 
 This library is mainly for developers who are interested in hosting a blog but want control and customization easily.  There are very few conventions needed for this.
 
-The core of the 
