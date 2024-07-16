@@ -1,7 +1,6 @@
 package s3gen
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -10,39 +9,39 @@ import (
 	"time"
 
 	"github.com/adrg/frontmatter"
-	gfn "github.com/panyam/goutils/fn"
-	"github.com/panyam/s3gen/views"
 )
 
+type Page interface {
+	LoadFrom(*Resource) error
+}
+
 const (
+	// When a resource is first encountered it is in pending state to indicate it needs to be loaded
 	ResourceStatePending = iota
+
+	// Marked when a resource has been loaded without any errors.
 	ResourceStateLoaded
+
+	// When a previously loaded resource has been deleted.
 	ResourceStateDeleted
+
+	// To indicate that a resource is not found (for some reason)
 	ResourceStateNotFound
+
+	// Loading of a resource failed (the status will be in the error field)
 	ResourceStateFailed
 )
 
-type ResourceFilterFunc func(res *Resource) bool
-type ResourceSortFunc func(a *Resource, b *Resource) bool
-
-// type PageFilterFunc func(res *Page) bool
-// type PageSortFunc func(a *Page, b *Page) bool
-
-type FrontMatter struct {
-	Loaded bool
-	Data   map[string]any
-	Length int64
-}
-
-/**
- * Each resource in our static site is identified by a unique path.
- * Note that resources can go through multiple transformations
- * resulting in more resources - to be converted into other resources.
- * Each resource is uniquely identified by its full path
- */
+// All files in our site are represented by the Resource type.
+// Each resource in identified by a unique path.   A resource can be processed
+// or transformed to result in more Resources (eg an input post markdown resource
+// would be rendered as an output html resource).
 type Resource struct {
-	Site     *Site
-	FullPath string // Unique URI/Path
+	// The Site that owns this resources.  Resources belong to a site and cannot be shared across multiple sites
+	Site *Site
+
+	// Fullpath of the Resource uniquely identifying it within a Site
+	FullPath string
 
 	// Created timestamp on disk
 	CreatedAt time.Time
@@ -50,13 +49,13 @@ type Resource struct {
 	// Updated time stamp on disk
 	UpdatedAt time.Time
 
-	// Loaded, Pending, NotFound, Failed
+	// The ResourceState - Loaded, Pending, NotFound, Failed
 	State int
 
-	// Any errors with this resource
+	// Any errors with this resource (eg during load)
 	Error error
 
-	// Info about the resource
+	// os level Info about the resource
 	info os.FileInfo
 
 	IsIndex      bool
@@ -67,41 +66,24 @@ type Resource struct {
 	frontMatter FrontMatter
 
 	// The destination page if this resource is for a target page
-	DestPage *Page
+	DestPage Page
 
 	// If this is a parametric resources - this returns the space of all parameters
 	// possible for this resource based on how it is loaded and its config it takes
 	// For example a blog page of the form /a/b/c/[name].md could have 10 distinct values
 	// for the "name" parameter.  Those will be populated here by the content processor
+	// For now we are only looking at single level of parameters.  In the future we will
+	// consider multiple parameters, eg: /[param1]/[param2]...
+	TemplateResource *Resource
 	ParamValues      []string
 	CurrentParamName string
 
 	// Once ParamValues are captured, the site will render this render this resource
 	// once per Param value.   Each page will be rendered in a different location.
-	ParamPages map[string]*Page
+	ParamResources map[string]*Resource
 }
 
-func (r *Resource) AddParam(param string) *Resource {
-	r.ParamValues = append(r.ParamValues, param)
-	return r
-}
-
-func (r *Resource) AddParams(params []string) *Resource {
-	for _, param := range params {
-		r.ParamValues = append(r.ParamValues, param)
-	}
-	return r
-}
-
-func (r *Resource) LoadParamValues() {
-	s := r.Site
-	proc := s.GetResourceLoader(r)
-	if proc != nil && r.State == ResourceStateLoaded {
-		r.ParamValues = nil
-		proc.LoadParamValues(r)
-	}
-}
-
+// Load's the resource from disk including any front matter it might have.
 func (r *Resource) Load() *Resource {
 	s := r.Site
 	proc := s.GetResourceLoader(r)
@@ -116,6 +98,7 @@ func (r *Resource) Load() *Resource {
 	return r
 }
 
+// Reset's the Resource's state to Pending so it can be reloaded
 func (r *Resource) Reset() {
 	r.State = ResourceStatePending
 	r.info = nil
@@ -123,7 +106,7 @@ func (r *Resource) Reset() {
 	r.frontMatter.Loaded = false
 	r.DestPage = nil
 	r.ParamValues = nil
-	r.ParamPages = make(map[string]*Page)
+	r.ParamResources = make(map[string]Page)
 }
 
 // Ensures that a resource's parent directory exists
@@ -156,6 +139,7 @@ func (r *Resource) WithoutExt(all bool) string {
 	return out
 }
 
+// Get the resource's os level FileInfo
 func (r *Resource) Info() os.FileInfo {
 	if r.info == nil {
 		r.info, r.Error = os.Stat(r.FullPath)
@@ -177,7 +161,8 @@ func (r *Resource) ReadAll() ([]byte, error) {
 	return io.ReadAll(reader)
 }
 
-// Loads the front matter for a resource if it exists
+// Returns a reader for all the content bytes after the front matter for a resource if it exists.
+// This is handy to prevent loading entire large files into memory (unlike ReadAll).
 func (r *Resource) Reader() (io.ReadCloser, error) {
 	// Read the content
 	r.FrontMatter()
@@ -190,14 +175,17 @@ func (r *Resource) Reader() (io.ReadCloser, error) {
 	return fi, nil
 }
 
+// Returns true if the resource is a directory
 func (r *Resource) IsDir() bool {
 	return r.Info().IsDir()
 }
 
+// Returns the extension of the resource's path
 func (r *Resource) Ext() string {
 	return filepath.Ext(r.FullPath)
 }
 
+// Load's the resource's front matter and parses if it has not been done so before.
 func (r *Resource) FrontMatter() *FrontMatter {
 	if !r.frontMatter.Loaded {
 		f, err := os.Open(r.FullPath)
@@ -222,17 +210,38 @@ func (r *Resource) FrontMatter() *FrontMatter {
 	return &r.frontMatter
 }
 
-func (r *Resource) PageFor(param string) *Page {
+func (r *Resource) AddParam(param string) *Resource {
+	r.ParamValues = append(r.ParamValues, param)
+	return r
+}
+
+func (r *Resource) AddParams(params []string) *Resource {
+	for _, param := range params {
+		r.ParamValues = append(r.ParamValues, param)
+	}
+	return r
+}
+
+func (r *Resource) LoadParamValues() {
+	s := r.Site
+	proc := s.GetResourceLoader(r)
+	if proc != nil && r.State == ResourceStateLoaded {
+		r.ParamValues = nil
+		proc.LoadParamValues(r)
+	}
+}
+
+func (r *Resource) PageFor(param string) *Resource {
 	if param == "" {
-		return r.DestPage
+		return r
 	}
-	if r.ParamPages == nil {
-		r.ParamPages = make(map[string]*Page)
+	if r.ParamResources == nil {
+		r.ParamResources = make(map[string]*Resource)
 	}
-	page, ok := r.ParamPages[param]
+	page, ok := r.ParamResources[param]
 	if !ok || page == nil {
-		page = &Page{Site: r.Site, Res: r}
-		r.ParamPages[param] = page
+		page = &DefaultPage{Site: r.Site, Res: r}
+		r.ParamResources[param] = page
 		page.LoadFrom(r)
 	}
 	return page
@@ -301,128 +310,6 @@ func (r *Resource) DestPathFor(param string) (destpath string) {
 	return
 }
 
-// A page in our site.  These are what are finally rendered.
-type Page struct {
-	// Site this page belongs to - can this be in multiple - then create different
-	// page instances
-	Site *Site
-
-	// The slug url for this page
-	Slug string
-
-	Title string
-
-	Link string
-
-	Summary string
-
-	CreatedAt time.Time
-	UpdatedAt time.Time
-
-	IsDraft bool
-
-	CanonicalUrl string
-
-	Tags []string
-
-	// The resource that corresponds to this page
-	// TODO - Should this be just the root resource or all resources for it?
-	Res *Resource
-	// DestRes *Resource
-
-	// Tells whether this is a detail page or a listing page
-	IsListPage bool
-
-	// The root view that corresponds to this page
-	// By default - we use the BasePage view
-	RootView views.View[*Site]
-
-	// Loaded, Pending, NotFound, Failed
-	State int
-
-	// Any errors with this resource
-	Error error
-}
-
-func (page *Page) LoadFrom(res *Resource) error {
-	frontMatter := res.FrontMatter().Data
-	pageName := "BasePage"
-	if frontMatter["page"] != nil && frontMatter["page"] != "" {
-		pageName = frontMatter["page"].(string)
-	}
-	site := page.Site
-	page.RootView = site.NewView(pageName)
-	if page.RootView == nil {
-		log.Println("Could not find view: ", pageName)
-	}
-	page.RootView.SetPage(page)
-
-	// For now we are going through "known" fields
-	// TODO - just do this by dynamically going through all fields in FM
-	// and calling SetNestedProps and fail if this field doesnt exist - or using struct tags
-	var err error
-	if val, ok := frontMatter["tags"]; val != nil && ok {
-		SetNestedProp(page, gfn.Map(val.([]any), func(v any) string { return v.(string) }), "Tags")
-	}
-	if val, ok := frontMatter["title"]; val != nil && ok {
-		page.Title = val.(string)
-	}
-	if val, ok := frontMatter["summary"]; val != nil && ok {
-		page.Summary = val.(string)
-	}
-	if val, ok := frontMatter["date"]; val != nil && ok {
-		// create at
-		if val.(string) != "" {
-			if page.CreatedAt, err = time.Parse("2006-1-2T03:04:05PM", val.(string)); err != nil {
-				log.Println("error parsing created time: ", err)
-			}
-		}
-	}
-
-	if val, ok := frontMatter["lastmod"]; val != nil && ok {
-		// update at
-		if val.(string) != "" {
-			if page.UpdatedAt, err = time.Parse("2006-1-2", val.(string)); err != nil {
-				log.Println("error parsing last mod time: ", err)
-			}
-		}
-	}
-
-	if val, ok := frontMatter["draft"]; val != nil && ok {
-		// update at
-		page.IsDraft = val.(bool)
-	}
-
-	// see if we can calculate the slug and link urls
-	page.Slug = ""
-	relpath := ""
-	resdir := res.DirName()
-	if res.IsIndex {
-		relpath, err = filepath.Rel(site.ContentRoot, resdir)
-		if err != nil {
-			return err
-		}
-	} else {
-		fp := res.WithoutExt(true)
-		relpath, err = filepath.Rel(site.ContentRoot, fp)
-		if err != nil {
-			return err
-		}
-	}
-	if relpath == "." {
-		relpath = ""
-	}
-	if relpath == "" {
-		relpath = "/"
-	}
-	if relpath[0] == '/' {
-		page.Link = fmt.Sprintf("%s%s", site.PathPrefix, relpath)
-	} else {
-		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
-	}
-	return nil
-}
-
 // Loads a resource of diferent types from storage
 type ResourceLoader interface {
 	// Loads resource data from the appropriate input path
@@ -439,26 +326,22 @@ type ResourceLoader interface {
 	LoadParamValues(r *Resource) error
 
 	// Sets up the view for a page
-	SetupPageView(res *Resource, page *Page) (err error)
+	SetupPageView(res *Resource, page Page) (err error)
 }
 
-type DefaultResourceLoader struct {
-}
+type ResourceFilterFunc func(res *Resource) bool
+type ResourceSortFunc func(a *Resource, b *Resource) bool
 
-func (m *DefaultResourceLoader) IsParametric(res *Resource) bool {
-	we := res.WithoutExt(true)
-	base := filepath.Base(we)
-	return base[0] == '[' && base[len(base)-1] == ']'
-}
+// Each Resource may have front matter.  Front matter is lazily loaded and parsed in a resource.
+// Our Resources specifically keep a reference to the front matter which can be used later on
+// during rendering
+type FrontMatter struct {
+	// Whether the front matter for the resource has been loaded or not
+	Loaded bool
 
-func (m *DefaultResourceLoader) LoadPage(res *Resource, page *Page) error {
-	return nil
-}
+	// Parsed data from front matter
+	Data map[string]any
 
-func (m *DefaultResourceLoader) LoadParamValues(res *Resource) error {
-	return nil
-}
-
-func (m *DefaultResourceLoader) SetupPageView(res *Resource, page *Page) (err error) {
-	return nil
+	// Length of the frontmatter in bytes (will be set after it is loaded)
+	Length int64
 }

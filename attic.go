@@ -1,9 +1,7 @@
 package s3gen
 
-import (
-	"path/filepath"
-	"strings"
-)
+/*
+var ErrContentPathInvalid = fmt.Errorf("Invalid content path")
 
 func (s *Site) PathToDir(path string) (string, bool, error) {
 	startingDir := filepath.SplitList(s.ContentRoot)
@@ -25,3 +23,4 @@ func (s *Site) PathToDir(path string) (string, bool, error) {
 	}
 	return filepath.Join(startingDir...), true, nil
 }
+*/

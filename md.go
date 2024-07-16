@@ -23,7 +23,7 @@ import (
 )
 
 type MDResourceLoader struct {
-	DefaultResourceLoader
+	defaultResourceLoader
 	Template *ttmpl.Template
 }
 
@@ -99,7 +99,7 @@ func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) 
 	mdview := &MDView{Res: res, Page: page}
 	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
 	// defer log.Println("After pageName, location: ", pageName, location, page.RootView)
-	return SetNestedProp(page.RootView, mdview, location)
+	return setNestedProp(page.RootView, mdview, location)
 }
 
 // A view that renders a Markdown

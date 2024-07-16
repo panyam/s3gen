@@ -26,8 +26,6 @@ import (
 	"github.com/radovskyb/watcher"
 )
 
-var ErrContentPathInvalid = fmt.Errorf("Invalid content path")
-
 // The site object is one of the most central types in s3gen.  It contains all configuration
 // metadata for the site (eg input/output directories, template directories, static routes etc).
 // The Site is the central point for managing the building, live reloading, templating etc needed
