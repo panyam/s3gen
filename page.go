@@ -7,7 +7,6 @@ import (
 	"time"
 
 	gfn "github.com/panyam/goutils/fn"
-	"github.com/panyam/s3gen/views"
 )
 
 // A page in our site.  These are what are finally rendered.
@@ -35,16 +34,11 @@ type DefaultPage struct {
 	Tags []string
 
 	// The resource that corresponds to this page
-	// TODO - Should this be just the root resource or all resources for it?
 	Res *Resource
-	// DestRes *Resource
-
-	// Tells whether this is a detail page or a listing page
-	IsListPage bool
 
 	// The root view that corresponds to this page
 	// By default - we use the BasePage view
-	RootView views.View[*Site]
+	// RootView views.View[*Site]
 
 	// Loaded, Pending, NotFound, Failed
 	State int
@@ -55,16 +49,6 @@ type DefaultPage struct {
 
 func (page *DefaultPage) LoadFrom(res *Resource) error {
 	frontMatter := res.FrontMatter().Data
-	pageName := "BasePage"
-	if frontMatter["page"] != nil && frontMatter["page"] != "" {
-		pageName = frontMatter["page"].(string)
-	}
-	site := page.Site
-	page.RootView = site.NewView(pageName)
-	if page.RootView == nil {
-		log.Println("Could not find view: ", pageName)
-	}
-	page.RootView.SetPage(page)
 
 	// For now we are going through "known" fields
 	// TODO - just do this by dynamically going through all fields in FM
@@ -103,6 +87,7 @@ func (page *DefaultPage) LoadFrom(res *Resource) error {
 	}
 
 	// see if we can calculate the slug and link urls
+	site := page.Site
 	page.Slug = ""
 	relpath := ""
 	resdir := res.DirName()
@@ -129,5 +114,17 @@ func (page *DefaultPage) LoadFrom(res *Resource) error {
 	} else {
 		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
 	}
+
+	/*
+		pageName := "BasePage"
+		if frontMatter["page"] != nil && frontMatter["page"] != "" {
+			pageName = frontMatter["page"].(string)
+		}
+		page.RootView = site.NewView(pageName)
+		if page.RootView == nil {
+			log.Println("Could not find view: ", pageName)
+		}
+		page.RootView.SetPage(page)
+	*/
 	return nil
 }

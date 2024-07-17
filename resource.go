@@ -49,6 +49,9 @@ type Resource struct {
 	// Updated time stamp on disk
 	UpdatedAt time.Time
 
+	// The resource this is derived/copied/rendered from. This will only be set for output resources
+	Source *Resource
+
 	// The ResourceState - Loaded, Pending, NotFound, Failed
 	State int
 
@@ -58,15 +61,15 @@ type Resource struct {
 	// os level Info about the resource
 	info os.FileInfo
 
-	IsIndex      bool
 	NeedsIndex   bool
+	IsIndex      bool
 	IsParametric bool
 
 	// Marks whether front matter was loaded
 	frontMatter FrontMatter
 
 	// The destination page if this resource is for a target page
-	DestPage Page
+	Page any
 
 	// If this is a parametric resources - this returns the space of all parameters
 	// possible for this resource based on how it is loaded and its config it takes
@@ -74,19 +77,15 @@ type Resource struct {
 	// for the "name" parameter.  Those will be populated here by the content processor
 	// For now we are only looking at single level of parameters.  In the future we will
 	// consider multiple parameters, eg: /[param1]/[param2]...
-	TemplateResource *Resource
-	ParamValues      []string
-	CurrentParamName string
-
-	// Once ParamValues are captured, the site will render this render this resource
-	// once per Param value.   Each page will be rendered in a different location.
-	ParamResources map[string]*Resource
+	ParamValues []string
+	// Name of the parameter
+	ParamName string
 }
 
 // Load's the resource from disk including any front matter it might have.
 func (r *Resource) Load() *Resource {
 	s := r.Site
-	proc := s.GetResourceLoader(r)
+	proc := s.GetResourceHandler(r)
 	if proc != nil && r.State == ResourceStatePending {
 		r.Error = proc.LoadResource(r)
 		if r.Error != nil {
@@ -104,9 +103,8 @@ func (r *Resource) Reset() {
 	r.info = nil
 	r.Error = nil
 	r.frontMatter.Loaded = false
-	r.DestPage = nil
+	r.Page = nil
 	r.ParamValues = nil
-	r.ParamResources = make(map[string]Page)
 }
 
 // Ensures that a resource's parent directory exists
@@ -224,27 +222,11 @@ func (r *Resource) AddParams(params []string) *Resource {
 
 func (r *Resource) LoadParamValues() {
 	s := r.Site
-	proc := s.GetResourceLoader(r)
+	proc := s.GetResourceHandler(r)
 	if proc != nil && r.State == ResourceStateLoaded {
 		r.ParamValues = nil
 		proc.LoadParamValues(r)
 	}
-}
-
-func (r *Resource) PageFor(param string) *Resource {
-	if param == "" {
-		return r
-	}
-	if r.ParamResources == nil {
-		r.ParamResources = make(map[string]*Resource)
-	}
-	page, ok := r.ParamResources[param]
-	if !ok || page == nil {
-		page = &DefaultPage{Site: r.Site, Res: r}
-		r.ParamResources[param] = page
-		page.LoadFrom(r)
-	}
-	return page
 }
 
 // Returns the path relative to the content root
@@ -254,79 +236,6 @@ func (r *Resource) RelPath() string {
 		return ""
 	}
 	return respath
-}
-
-func (r *Resource) DestPathFor(param string) (destpath string) {
-	s := r.Site
-	respath, found := strings.CutPrefix(r.FullPath, s.ContentRoot)
-	if !found {
-		log.Println("Respath not found: ", r.FullPath, s.ContentRoot)
-		return ""
-	}
-
-	if r.IsParametric {
-		if param == "" {
-			log.Println("Page is parametric but param is empty: ", r.FullPath)
-			return
-		}
-
-		// if we have /a/b/c/d/[param].ext
-		// then do /a/b/c/d/param/index.html
-		// res is not a dir - eg it something like xyz.ext
-		// depending on ext - if the ext is for a page file
-		// then generate OutDir/xyz/index.html
-		// otherwise OutDir/xyz.ext
-		ext := filepath.Ext(respath)
-
-		rem := respath[:len(respath)-len(ext)]
-		dirname := filepath.Dir(rem)
-
-		// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
-		// can use that for language sites
-		destpath = filepath.Join(s.OutputDir, dirname, param, "index.html")
-	} else {
-		if r.Info().IsDir() {
-			// Then this will be served with dest/index.html
-			destpath = filepath.Join(s.OutputDir, respath)
-		} else if r.IsIndex {
-			destpath = filepath.Join(s.OutputDir, filepath.Dir(respath), "index.html")
-		} else if r.NeedsIndex {
-			// res is not a dir - eg it something like xyz.ext
-			// depending on ext - if the ext is for a page file
-			// then generate OutDir/xyz/index.html
-			// otherwise OutDir/xyz.ext
-			ext := filepath.Ext(respath)
-
-			rem := respath[:len(respath)-len(ext)]
-
-			// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
-			// can use that for language sites
-			destpath = filepath.Join(s.OutputDir, rem, "index.html")
-		} else {
-			// basic static file - so copy as is
-			destpath = filepath.Join(s.OutputDir, respath)
-		}
-	}
-	return
-}
-
-// Loads a resource of diferent types from storage
-type ResourceLoader interface {
-	// Loads resource data from the appropriate input path
-	LoadResource(r *Resource) error
-
-	// Loads the parameter values for a resource
-	// This is seperate from the resource as this is called only for
-	// a paraametric page.  Typically parametric pages will need to know
-	// about everything else in the site so the site and its (leaf) resource
-	// has to be loaded before this is called.  Hence it is seperated from
-	// the normal (leaf) load of a resource.  If the load is successful
-	// thenthe r.ParamValues is set to all the parametrics this page can take
-	// otherwise an error is returned
-	LoadParamValues(r *Resource) error
-
-	// Sets up the view for a page
-	SetupPageView(res *Resource, page Page) (err error)
 }
 
 type ResourceFilterFunc func(res *Resource) bool

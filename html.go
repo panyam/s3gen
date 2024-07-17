@@ -12,13 +12,13 @@ import (
 	"github.com/panyam/s3gen/views"
 )
 
-type HTMLResourceLoader struct {
-	defaultResourceLoader
+type HTMLResourceHandler struct {
+	defaultResourceHandler
 	Template *htmpl.Template
 }
 
-func NewHTMLResourceLoader(templatesDir string) *HTMLResourceLoader {
-	h := &HTMLResourceLoader{}
+func NewHTMLResourceHandler(templatesDir string) *HTMLResourceHandler {
+	h := &HTMLResourceHandler{}
 	h.Template = htmpl.New("hello")
 	if templatesDir != "" {
 		// Funcs(CustomFuncMap()).
@@ -32,7 +32,7 @@ func NewHTMLResourceLoader(templatesDir string) *HTMLResourceLoader {
 	return h
 }
 
-func (m *HTMLResourceLoader) LoadResource(res *Resource) error {
+func (m *HTMLResourceHandler) LoadResource(res *Resource) error {
 	base := filepath.Base(res.FullPath)
 	res.IsIndex = base == "index.htm" || base == "_index.htm" || base == "index.html" || base == "_index.html"
 	res.NeedsIndex = strings.HasSuffix(res.FullPath, ".htm") || strings.HasSuffix(res.FullPath, ".html")
@@ -41,16 +41,12 @@ func (m *HTMLResourceLoader) LoadResource(res *Resource) error {
 	res.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
 
 	// if we are not parametric - then created the destination page
-	if !res.IsParametric {
-		res.DestPage = &Page{Res: res, Site: res.Site}
-		res.DestPage.LoadFrom(res)
-	} else {
-		// what
-	}
+	// res.Site.CreatePage(res)
+	// res.Page.LoadFrom(res)
 	return nil
 }
 
-func (m *HTMLResourceLoader) LoadParamValues(res *Resource) error {
+func (m *HTMLResourceHandler) LoadParamValues(res *Resource) error {
 	content, err := res.ReadAll()
 
 	tmpl, err := res.Site.TextTemplateClone().Funcs(map[string]any{}).Parse(string(content))
@@ -80,7 +76,7 @@ func (m *HTMLResourceLoader) LoadParamValues(res *Resource) error {
 // 1. Identify the Page properties (like title, slug etc and any others - may be this can come from FrontMatter?)
 // 2. More importantly - Return the PageView type that can render
 // the resource.
-func (m *HTMLResourceLoader) SetupPageView(res *Resource, page *Page) (err error) {
+func (m *HTMLResourceHandler) SetupView(res *Resource) (err error) {
 	// log.Println("RelPath, Link: ", relpath, page.Link)
 	frontMatter := res.FrontMatter().Data
 	location := "BodyView"
@@ -99,7 +95,7 @@ func (m *HTMLResourceLoader) SetupPageView(res *Resource, page *Page) (err error
 		}
 	*/
 
-	view := &HTMLView{Res: res, Page: page}
+	view := &HTMLView{Res: res}
 	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
 	// defer log.Println("After pageName, location: ", pageName, location, page.RootView)
 	return setNestedProp(page.RootView, view, location)
@@ -108,9 +104,6 @@ func (m *HTMLResourceLoader) SetupPageView(res *Resource, page *Page) (err error
 // A view that renders a Markdown
 type HTMLView struct {
 	views.BaseView[*Site]
-
-	// Page we are rendering into
-	Page *Page
 
 	// Actual resource to render
 	Res *Resource

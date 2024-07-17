@@ -58,9 +58,9 @@ type Site struct {
 	// http path prefixes
 	StaticFolders []string
 
-	// ResourceLoaders tell us how to "process" a content of a given type.
+	// ResourceHandlers tell us how to "process" a content of a given type.
 	// types are denoted by extensions for now later on we could do something else
-	ResourceLoaders map[string]ResourceLoader
+	ResourceHandlers map[string]ResourceHandler
 
 	// When walking the content root for files, this callback specify which directories
 	// are to be ignored.
@@ -75,6 +75,7 @@ type Site struct {
 	LazyLoad   bool
 
 	NewViewFunc func(name string) views.View[*Site]
+	CreatePage  func(res *Resource)
 
 	BuildFrequency time.Duration
 
@@ -107,7 +108,7 @@ type Site struct {
 	reloadWatcher *watcher.Watcher
 
 	resources map[string]*Resource
-	pages     map[string]*Page
+	resedges  map[string][]string
 
 	initialized bool
 }
@@ -115,11 +116,15 @@ type Site struct {
 func (s *Site) Init() *Site {
 	s.ContentRoot = gut.ExpandUserPath(s.ContentRoot)
 	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
+	if s.CreatePage == nil {
+		s.CreatePage = func(res *Resource) {
+			p := &DefaultPage{Res: res, Site: res.Site}
+			res.Page = p
+			p.LoadFrom(res)
+		}
+	}
 	if s.resources == nil {
 		s.resources = make(map[string]*Resource)
-	}
-	if s.pages == nil {
-		s.pages = make(map[string]*Page)
 	}
 	if s.pageCallbacks == nil {
 		s.pageCallbacks = make(map[string]any)
@@ -270,34 +275,6 @@ func (s *Site) GetRouter() *mux.Router {
 	return s.filesRouter
 }
 
-// Given a file in our file system - returns the "URL" that can serve that file.
-func (s *Site) filePathToUrlPath(filePath string) string {
-	res := s.GetResource(filePath)
-	log.Println("Res, Info: ", res, res.Info())
-	return ""
-}
-
-// Given a url path, eg "/a/b/c/d/e" return which "root" resource it can be
-// served by.  The "root" resource is the file that will be used to compile
-// and serve this file.   Eg if we have (assuming our contentRoot is ./data and
-// site root is /blog
-//
-//	/blog/b/c/d/
-//
-// Then we expect the path to be at: ./data/b/c/d/<index.ext>
-//
-// <index.ext> could be one of the "index" files we designate,
-// eg _index.html or index.html or _index.md or index.md etc
-//
-// For now we assume only one of these files exist and it is upto
-// the page oragnizer to pick this.  An exception for this is if we want things like
-func (s *Site) urlPathToFilePath( /*urlPath*/ string) *Resource {
-	// cand := filepath.Join(s.ContentRoot, urlPath)
-	// log.Println("Cand: ", cand)
-	// if cand is directory - see if cand/<index_html> exists
-	return nil
-}
-
 // The base entry point for a serving a site with our customer handler
 // This is used for a few  purposes:
 //  1. If you want to serve a static site but want to to have a "refresh" handler.  ie if a source changes, this can catch it and rebuild the necessary things before serving it
@@ -363,7 +340,7 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 
 // This is the heart of the build process.   This method is called with a list of resources that
 // have to be reprocessed (either due to periodic updates or change events etc).   Resources in
-// our site form a graph and each resource is processed by a ResourceLoader appropriate for it
+// our site form a graph and each resource is processed by a ResourceHandler appropriate for it
 // The content processor can create more resources that may need an update because they are
 // dependant on this resource.   By allowing a list of resources to be processed in a batch
 // it is more efficient to perform batch dependencies instead of doing repeated builds for each
@@ -380,62 +357,87 @@ func (s *Site) Rebuild(rs []*Resource) {
 		rs = s.ListResources(nil, nil, 0, 0)
 	}
 
+	dependents := make(map[string]*Resource)
+	// Step 1 - Update dependencies and collect affected outputs
 	for _, res := range rs {
-		var params []string
-		if res.IsParametric {
-			log.Println("Page Is Parametric: ", res.FullPath, res.ParamValues)
-			res.LoadParamValues()
-			for _, param := range res.ParamValues {
-				params = append(params, param)
-			}
-		} else {
-			params = append(params, "")
-		}
-
 		// now generate the pages here
-		proc := s.GetResourceLoader(res)
+		proc := s.GetResourceHandler(res)
 		if proc == nil {
+			log.Println("No resource loader for : ", res.FullPath)
+			// TODO - may be do a defaault handler?
 			continue
 		}
 
-		for _, param := range params {
-			destpath := res.DestPathFor(param)
-			outres := s.GetResource(destpath)
-			if outres != nil {
-				outres.EnsureDir()
-				outfile, err := os.Create(outres.FullPath)
-				if err != nil {
-					log.Println("Error writing to: ", outres.FullPath, err)
-					continue
-				}
-				defer outfile.Close()
+		err := proc.LoadResource(res)
+		if err != nil {
+			log.Println("Error loading resource: ", res.FullPath, err)
+			continue
+		}
 
-				res.CurrentParamName = param
-				page := res.PageFor(param)
+		// The site maintains a dependency graph between resources.
+		// The handler is responsible for updating this dependency list for a given
+		// resource so we can track changes, rebuilds etc
 
-				// Now setup the view for this page
-				if page.State == ResourceStatePending {
-					page.Error = proc.SetupPageView(res, page)
-					if page.Error != nil {
-						log.Println("Error setting up page: ", page.Error, res.FullPath)
-					} else {
-						page.State = ResourceStateLoaded
-					}
-				}
+		// For every resource - there can be one or more "destination" resources
+		// eg a/b/c/d.md its dest resource would be outdir/a/b/c/d/index.html
+		// if it is parametric it can have several destination resources
+		// eg a/b/[animal].md could have a/b/cat/index.html, a/b/dog/index.html and so on
+		// So we need to see if the resource is "final" in which case render it, otherwise
+		// return child resources - that depends on the parent
 
-				if page.Error == nil {
-					// After the page is populate, initialise it
-					page.RootView.InitView(s, nil)
-
-					// w.WriteHeader(http.StatusOK)
-					err = s.RenderView(outfile, page.RootView, "")
-					if err != nil {
-						slog.Error("Render Error: ", "err", res.FullPath, err)
-						// c.Abort()
-					}
-				}
+		if res.IsParametric {
+			log.Println("Resource Is Parametric: ", res.FullPath, res.ParamValues)
+			err = proc.LoadParamValues(res)
+			if err != nil {
+				log.Println("Error loading param values: ", res.FullPath, err)
+				continue
 			}
 		}
+
+		// Now generate the dependent resources and add to our list
+		proc.GenerateTargets(res, dependents)
+	}
+
+	// Step 2: Re-Render all affected outputs
+	for path, outres := range dependents {
+		inres := s.GetResource(path)
+		proc := s.GetResourceHandler(inres)
+		renderer := proc.GetRenderer(inres)
+
+		log.Println("Rendering: ", path)
+		outres.EnsureDir()
+		outfile, err := os.Create(outres.FullPath)
+		if err != nil {
+			log.Println("Error writing to: ", outres.FullPath, err)
+			continue
+		}
+		defer outfile.Close()
+
+		// Now setup the view for this parameter specific resource
+		renderer(outres, outfile)
+
+		/*
+			if res.State == ResourceStatePending {
+				res.Error = proc.SetupView(res)
+				if res.Error != nil {
+					log.Println("Error setting up Parameter Resource: ", res.Error, res.FullPath)
+				} else {
+					res.State = ResourceStateLoaded
+				}
+			}
+
+			if res.Error == nil {
+				// After the page is populate, initialise it
+				res.RootView.InitView(s, nil)
+
+				// w.WriteHeader(http.StatusOK)
+				err = s.RenderView(outfile, res.RootView, "")
+				if err != nil {
+					slog.Error("Render Error: ", "err", res.FullPath, err)
+					// c.Abort()
+				}
+			}
+		*/
 	}
 }
 
@@ -448,7 +450,7 @@ func (s *Site) NewView(name string) (view views.View[*Site]) {
 	return nil
 }
 
-func (s *Site) GetResourceLoader(rs *Resource) ResourceLoader {
+func (s *Site) GetResourceHandler(rs *Resource) ResourceHandler {
 	// normal file
 	// check type and call appropriate processor
 	// Should we call processor directly here or collect a list and
@@ -457,37 +459,13 @@ func (s *Site) GetResourceLoader(rs *Resource) ResourceLoader {
 
 	// TODO - move to a table lookup or regex based one
 	if ext == ".mdx" || ext == ".md" {
-		return NewMDResourceLoader("")
+		return NewMDResourceHandler("")
 	}
 	if ext == ".html" || ext == ".htm" {
-		return NewHTMLResourceLoader("")
+		return NewHTMLResourceHandler("")
 	}
 	// log.Println("Could not find proc for, Name, Ext: ", rs.FullPath, ext)
 	return nil
-}
-
-// Loads a resource and validates it.   Note that a resources may not
-// necessarily be in memory just because it is loaded.  Just a Resource
-// pointer is kept and it can be streamed etc
-func (s *Site) GetResource(fullpath string) *Resource {
-	res, found := s.resources[fullpath]
-	if res == nil || !found {
-		res = &Resource{
-			Site:      s,
-			FullPath:  fullpath,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			State:     ResourceStatePending,
-		}
-		s.resources[fullpath] = res
-	}
-	// Try to load it too
-	res.Load()
-	if res.Info() == nil {
-		log.Println("Resource info is null: ", res.FullPath)
-	}
-
-	return res
 }
 
 func (s *Site) Watch() {

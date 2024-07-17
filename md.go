@@ -22,13 +22,13 @@ import (
 	"go.abhg.dev/goldmark/anchor"
 )
 
-type MDResourceLoader struct {
-	defaultResourceLoader
+type MDResourceHandler struct {
+	defaultResourceHandler
 	Template *ttmpl.Template
 }
 
-func NewMDResourceLoader(templatesDir string) *MDResourceLoader {
-	h := &MDResourceLoader{}
+func NewMDResourceHandler(templatesDir string) *MDResourceHandler {
+	h := &MDResourceHandler{}
 	h.Template = ttmpl.New("hello")
 	if templatesDir != "" {
 		// Funcs(CustomFuncMap()).
@@ -42,7 +42,7 @@ func NewMDResourceLoader(templatesDir string) *MDResourceLoader {
 	return h
 }
 
-func (m *MDResourceLoader) LoadResource(res *Resource) error {
+func (m *MDResourceHandler) LoadResource(res *Resource) error {
 	base := filepath.Base(res.FullPath)
 	res.IsIndex = base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
 	res.NeedsIndex = strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx")
@@ -51,14 +51,12 @@ func (m *MDResourceLoader) LoadResource(res *Resource) error {
 	res.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
 
 	// if we are not parametric - then created the destination page
-	if true || !res.IsParametric {
-		res.DestPage = &Page{Res: res, Site: res.Site}
-		res.DestPage.LoadFrom(res)
-	}
+	// res.Site.CreatePage(res)
+	// res.Page.LoadFrom(res)
 	return nil
 }
 
-func (m *MDResourceLoader) LoadParamValues(res *Resource) error {
+func (m *MDResourceHandler) LoadParamValues(res *Resource) error {
 	content, err := res.ReadAll()
 	tmpl, err := res.Site.TextTemplateClone().Funcs(map[string]any{}).Parse(string(content))
 	if err != nil {
@@ -88,7 +86,7 @@ func (m *MDResourceLoader) LoadParamValues(res *Resource) error {
 // 1. Identify the Page properties (like title, slug etc and any others - may be this can come from FrontMatter?)
 // 2. More importantly - Return the PageView type that can render
 // the resource.
-func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) {
+func (m *MDResourceHandler) SetupView(res *Resource) (err error) {
 	// log.Println("RelPath, Link: ", relpath, page.Link)
 	frontMatter := res.FrontMatter().Data
 	location := "BodyView"
@@ -96,7 +94,7 @@ func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) 
 		location = frontMatter["location"].(string)
 	}
 
-	mdview := &MDView{Res: res, Page: page}
+	mdview := &MDView{Res: res}
 	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
 	// defer log.Println("After pageName, location: ", pageName, location, page.RootView)
 	return setNestedProp(page.RootView, mdview, location)
@@ -105,9 +103,6 @@ func (m *MDResourceLoader) SetupPageView(res *Resource, page *Page) (err error) 
 // A view that renders a Markdown
 type MDView struct {
 	views.BaseView[*Site]
-
-	// Page we are rendering into
-	Page *Page
 
 	// Actual resource to render
 	Res *Resource
