@@ -33,7 +33,7 @@ func (s *Site) GetResource(fullpath string) *Resource {
 
 // Remove a resources from this graph along with all its dependencies
 func (s *Site) RemoveResource(path string) *Resource {
-	r, _ := s.resources[path]
+	r := s.resources[path]
 	s.RemoveEdgesTo(path)
 	s.RemoveEdgesFrom(path)
 	return r
@@ -44,17 +44,15 @@ func (s *Site) PathExists(srcpath string, destpath string) bool {
 		return false
 	}
 	q := []string{srcpath}
-	for q != nil && len(q) > 0 {
+	for len(q) > 0 {
 		var nq []string
 		for _, p := range q {
 			edges := s.resedges[p]
-			if edges != nil {
-				for _, next := range edges {
-					if next == destpath {
-						return true
-					} else {
-						nq = append(nq, next)
-					}
+			for _, next := range edges {
+				if next == destpath {
+					return true
+				} else {
+					nq = append(nq, next)
 				}
 			}
 		}
@@ -111,7 +109,7 @@ func (s *Site) RemoveEdge(srcpath string, destpath string) bool {
 
 // Removes all resources that a given path depends on
 func (s *Site) RemoveEdgesTo(destpath string) {
-	for srcpath, _ := range s.resedges {
+	for srcpath := range s.resedges {
 		s.RemoveEdge(srcpath, destpath)
 	}
 }

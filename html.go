@@ -8,8 +8,6 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
-
-	"github.com/panyam/s3gen/views"
 )
 
 type HTMLResourceHandler struct {
@@ -33,6 +31,9 @@ func NewHTMLResourceHandler(templatesDir string) *HTMLResourceHandler {
 }
 
 func (m *HTMLResourceHandler) LoadResource(res *Resource) error {
+	// Make sure resource's front matter is loaded if any
+	res.FrontMatter()
+
 	base := filepath.Base(res.FullPath)
 	res.IsIndex = base == "index.htm" || base == "_index.htm" || base == "index.html" || base == "_index.html"
 	res.NeedsIndex = strings.HasSuffix(res.FullPath, ".htm") || strings.HasSuffix(res.FullPath, ".html")
@@ -47,85 +48,40 @@ func (m *HTMLResourceHandler) LoadResource(res *Resource) error {
 }
 
 func (m *HTMLResourceHandler) LoadParamValues(res *Resource) error {
-	content, err := res.ReadAll()
-
-	tmpl, err := res.Site.TextTemplateClone().Funcs(map[string]any{}).Parse(string(content))
-	if err != nil {
-		log.Println("Error parsing template: ", err, res.FullPath)
-		return err
-	}
 	output := bytes.NewBufferString("")
-	err = tmpl.Execute(output, &MDView{Res: res})
+	err := m.RenderContent(res, output)
 	if err != nil {
 		log.Println("Error executing paramvals template: ", err, res.FullPath)
-		return err
 	} else {
 		log.Println("Param Values After: ", res.ParamValues, output)
 	}
 	return err
 }
 
-// For a given resource - we need the page data to be populated
-// and also we need to find the right View for it.   Great thing
-// is our views are strongly typed.
-//
-// In next pages are organized by folders - same here
-// Just that we are doing this via the PopulatePage hook.
-// The goal of this function is to do 2 things looking at the
-// Resource
-// 1. Identify the Page properties (like title, slug etc and any others - may be this can come from FrontMatter?)
-// 2. More importantly - Return the PageView type that can render
-// the resource.
-func (m *HTMLResourceHandler) SetupView(res *Resource) (err error) {
-	// log.Println("RelPath, Link: ", relpath, page.Link)
-	frontMatter := res.FrontMatter().Data
-	location := "BodyView"
-	if frontMatter["location"] != nil {
-		location = frontMatter["location"].(string)
-	}
-
-	/*
-		wrapper := ""
-		if frontMatter["wrapper"] != nil {
-			wrapper = frontMatter["wrapper"].(string)
-		}
-		if wrapper != "" {
-			// then create another view such that its BodyView
-			WrapperView{BaseView: BaseView{Template: wrapper}}
-		}
-	*/
-
-	view := &HTMLView{Res: res}
-	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
-	// defer log.Println("After pageName, location: ", pageName, location, page.RootView)
-	return setNestedProp(page.RootView, view, location)
-}
-
-// A view that renders a Markdown
-type HTMLView struct {
-	views.BaseView[*Site]
-
-	// Actual resource to render
-	Res *Resource
-}
-
-func (v *HTMLView) RenderResponse(writer io.Writer) (err error) {
-	res := v.Res
+func (m *HTMLResourceHandler) RenderContent(res *Resource, w io.Writer) error {
+	site := res.Site
 	mdfile, _ := res.Reader()
 	mddata, _ := io.ReadAll(mdfile)
 	defer mdfile.Close()
 
-	mdTemplate, err := v.Context.HtmlTemplateClone().Parse(string(mddata))
+	mdTemplate, err := site.HtmlTemplateClone().Parse(string(mddata))
 	if err != nil {
 		slog.Error("Template Clone Error: ", "error", err)
 		return err
 	}
 	if err != nil {
 		mdTemplate, err = mdTemplate.Parse(string(mddata))
+	}
+	if err != nil {
 		return err
 	}
 
-	err = mdTemplate.Execute(writer, v)
+	params := map[any]any{
+		"Res":         res,
+		"Site":        res.Site,
+		"FrontMatter": res.FrontMatter().Data,
+	}
+	err = mdTemplate.Execute(w, params)
 	if err != nil {
 		log.Println("Error executing HTML: ", res.FullPath, err)
 	}

@@ -12,13 +12,15 @@ import (
 )
 
 var (
-	config_file        = flag.String("config_file", "config.yaml", "Config file to load site config from")
-	content_root       = flag.String("content_root", "", "Root folder from which all content is built from.  Will override the respective value in the config if provided")
-	output_dir         = flag.String("output_dir", "", "If specified the output_dir in the config will be overridden with this")
-	site_prefix        = flag.String("site_prefix", "", "By default sites can be served at /.  This determines the site prefix to use and will override the respective value in the config if provided")
-	html_templates_dir = flag.String("html_templates_dir", "", "List of Folders from html templates will be parsed and used.")
-	text_templates_dir = flag.String("text_templates_dir", "", "List of Folders from text templates will be parsed and used.")
-	serve_addr         = flag.String("serve_addr", "", "The address on which to serve this site (with live reloading enabled) in dev mode")
+	/*
+		config_file        = flag.String("config_file", "config.yaml", "Config file to load site config from")
+		content_root       = flag.String("content_root", "", "Root folder from which all content is built from.  Will override the respective value in the config if provided")
+		output_dir         = flag.String("output_dir", "", "If specified the output_dir in the config will be overridden with this")
+		site_prefix        = flag.String("site_prefix", "", "By default sites can be served at /.  This determines the site prefix to use and will override the respective value in the config if provided")
+		html_templates_dir = flag.String("html_templates_dir", "", "List of Folders from html templates will be parsed and used.")
+		text_templates_dir = flag.String("text_templates_dir", "", "List of Folders from text templates will be parsed and used.")
+	*/
+	serve_addr = flag.String("serve_addr", "", "The address on which to serve this site (with live reloading enabled) in dev mode")
 )
 
 func main() {

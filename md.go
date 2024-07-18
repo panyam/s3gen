@@ -10,7 +10,6 @@ import (
 	ttmpl "text/template"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
-	"github.com/panyam/s3gen/views"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
 	"github.com/yuin/goldmark/ast"
@@ -43,6 +42,9 @@ func NewMDResourceHandler(templatesDir string) *MDResourceHandler {
 }
 
 func (m *MDResourceHandler) LoadResource(res *Resource) error {
+	// Make sure resource's front matter is loaded if any
+	res.FrontMatter()
+
 	base := filepath.Base(res.FullPath)
 	res.IsIndex = base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
 	res.NeedsIndex = strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx")
@@ -57,71 +59,34 @@ func (m *MDResourceHandler) LoadResource(res *Resource) error {
 }
 
 func (m *MDResourceHandler) LoadParamValues(res *Resource) error {
-	content, err := res.ReadAll()
-	tmpl, err := res.Site.TextTemplateClone().Funcs(map[string]any{}).Parse(string(content))
-	if err != nil {
-		log.Println("Error parsing template: ", err, res.FullPath)
-		return err
-	}
 	output := bytes.NewBufferString("")
-
-	err = tmpl.Execute(output, &MDView{Res: res})
+	err := m.RenderContent(res, output)
 	if err != nil {
 		log.Println("Error executing paramvals template: ", err, res.FullPath)
-		return err
 	} else {
-		log.Println("Param Values After: ", res.ParamValues)
+		log.Println("Param Values After: ", res.ParamValues, output)
 	}
 	return err
 }
 
-// For a given resource - we need the page data to be populated
-// and also we need to find the right View for it.   Great thing
-// is our views are strongly typed.
-//
-// In next pages are organized by folders - same here
-// Just that we are doing this via the PopulatePage hook.
-// The goal of this function is to do 2 things looking at the
-// Resource
-// 1. Identify the Page properties (like title, slug etc and any others - may be this can come from FrontMatter?)
-// 2. More importantly - Return the PageView type that can render
-// the resource.
-func (m *MDResourceHandler) SetupView(res *Resource) (err error) {
-	// log.Println("RelPath, Link: ", relpath, page.Link)
-	frontMatter := res.FrontMatter().Data
-	location := "BodyView"
-	if frontMatter["location"] != nil {
-		location = frontMatter["location"].(string)
-	}
-
-	mdview := &MDView{Res: res}
-	// log.Println("Before pageName, location: ", pageName, location, page.RootView, mdview)
-	// defer log.Println("After pageName, location: ", pageName, location, page.RootView)
-	return setNestedProp(page.RootView, mdview, location)
-}
-
-// A view that renders a Markdown
-type MDView struct {
-	views.BaseView[*Site]
-
-	// Actual resource to render
-	Res *Resource
-}
-
-func (v *MDView) RenderResponse(writer io.Writer) (err error) {
-	res := v.Res
+// Renders just the content section within the resource
+func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
+	site := res.Site
 	mdfile, _ := res.Reader()
 	mddata, _ := io.ReadAll(mdfile)
 	defer mdfile.Close()
 
-	mdTemplate, err := v.Context.TextTemplate().Parse(string(mddata))
+	mdTemplate, err := site.TextTemplate().Parse(string(mddata))
 	if err != nil {
 		slog.Error("Template Parse Error: ", "error", err)
 		return err
 	}
 
 	finalmd := bytes.NewBufferString("")
-	err = mdTemplate.Execute(finalmd, v)
+	err = mdTemplate.Execute(finalmd, map[string]any{
+		"Site": site,
+		"Res":  res,
+	})
 	if err != nil {
 		log.Println("Error executing MD: ", res.FullPath, err)
 	}
@@ -161,7 +126,7 @@ func (v *MDView) RenderResponse(writer io.Writer) (err error) {
 		return err
 	}
 
-	writer.Write(buf.Bytes())
+	_, err = w.Write(buf.Bytes())
 	return err
 }
 

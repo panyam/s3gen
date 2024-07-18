@@ -74,16 +74,13 @@ type Site struct {
 	LiveReload bool
 	LazyLoad   bool
 
-	NewViewFunc func(name string) views.View[*Site]
-	CreatePage  func(res *Resource)
+	DefaultPageTemplate PageTemplate
+	GetTemplate         func(res *Resource) PageTemplate
+	CreatePage          func(res *Resource)
 
 	BuildFrequency time.Duration
 
 	CommonFuncMap htmpl.FuncMap
-
-	// Page callbacks are used by the site in a way that the resource being
-	// rendered can provide info back to the rendered to update any state
-	pageCallbacks map[string]any
 
 	// Global templates dirs
 	// A list of GLOBs that will point to several html templates our generator will parse and use
@@ -120,20 +117,20 @@ func (s *Site) Init() *Site {
 		s.CreatePage = func(res *Resource) {
 			p := &DefaultPage{Res: res, Site: res.Site}
 			res.Page = p
-			p.LoadFrom(res)
+			if err := p.LoadFrom(res); err != nil {
+				log.Println("error loading page: ", err)
+			}
 		}
 	}
 	if s.resources == nil {
 		s.resources = make(map[string]*Resource)
-	}
-	if s.pageCallbacks == nil {
-		s.pageCallbacks = make(map[string]any)
 	}
 	s.initialized = true
 	return s
 }
 
 func (s *Site) HtmlTemplateClone() *htmpl.Template {
+	s.HtmlTemplate()
 	out, err := s.htmlTemplateClone.Clone()
 	if err != nil {
 		log.Println("Html Template Clone Error: ", err)
@@ -149,6 +146,8 @@ func (s *Site) PathRelUrl(path string) string {
 }
 
 func (s *Site) TextTemplateClone() *ttmpl.Template {
+	s.TextTemplate()
+	log.Println("TTClone: ", s.textTemplateClone)
 	out, err := s.textTemplateClone.Clone()
 	if err != nil {
 		log.Println("Text Template Clone Error: ", err)
@@ -165,6 +164,18 @@ func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 			output := bytes.NewBufferString("")
 			err = s.RenderView(output, view, "")
 			return template.HTML(output.String()), err
+		},
+		"HtmlTemplate": func(templateName string, params any) (out template.HTML, err error) {
+			writer := bytes.NewBufferString("")
+			err = s.HtmlTemplate().ExecuteTemplate(writer, templateName, params)
+			out = template.HTML(writer.String())
+			return
+		},
+		"TextTemplate": func(templateName string, params any) (out string, err error) {
+			writer := bytes.NewBufferString("")
+			err = s.HtmlTemplate().ExecuteTemplate(writer, templateName, params)
+			out = writer.String()
+			return
 		},
 		"json": s.Json,
 	}
@@ -288,10 +299,9 @@ func (s *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 	sortFunc ResourceSortFunc,
-	offset int, count int) []*Resource {
-	var foundResources []*Resource
+	offset int, count int) (foundResources []*Resource) {
 	// keep a map of files encountered and their statuses
-	filepath.WalkDir(s.ContentRoot, func(fullpath string, info os.DirEntry, err error) error {
+	err := filepath.WalkDir(s.ContentRoot, func(fullpath string, info os.DirEntry, err error) error {
 		if err != nil {
 			// just print err related to the path and stop scanning
 			// if this err means something else we can do other things here
@@ -335,7 +345,10 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 	if count > 0 {
 		foundResources = foundResources[:count]
 	}
-	return foundResources
+	if err != nil {
+		slog.Warn("Error walking dir: ", "error", err)
+	}
+	return
 }
 
 // This is the heart of the build process.   This method is called with a list of resources that
@@ -386,7 +399,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 		// return child resources - that depends on the parent
 
 		if res.IsParametric {
-			log.Println("Resource Is Parametric: ", res.FullPath, res.ParamValues)
+			slog.Info("Resource Is Parametric: ", "filepath", res.FullPath, "paramvalues", res.ParamValues)
 			err = proc.LoadParamValues(res)
 			if err != nil {
 				log.Println("Error loading param values: ", res.FullPath, err)
@@ -395,16 +408,15 @@ func (s *Site) Rebuild(rs []*Resource) {
 		}
 
 		// Now generate the dependent resources and add to our list
-		proc.GenerateTargets(res, dependents)
+		_ = proc.GenerateTargets(res, dependents)
 	}
 
 	// Step 2: Re-Render all affected outputs
 	for path, outres := range dependents {
 		inres := s.GetResource(path)
 		proc := s.GetResourceHandler(inres)
-		renderer := proc.GetRenderer(inres)
 
-		log.Println("Rendering: ", path)
+		slog.Info("Rendering: ", "respath", path)
 		outres.EnsureDir()
 		outfile, err := os.Create(outres.FullPath)
 		if err != nil {
@@ -414,40 +426,14 @@ func (s *Site) Rebuild(rs []*Resource) {
 		defer outfile.Close()
 
 		// Now setup the view for this parameter specific resource
-		renderer(outres, outfile)
-
-		/*
-			if res.State == ResourceStatePending {
-				res.Error = proc.SetupView(res)
-				if res.Error != nil {
-					log.Println("Error setting up Parameter Resource: ", res.Error, res.FullPath)
-				} else {
-					res.State = ResourceStateLoaded
-				}
-			}
-
-			if res.Error == nil {
-				// After the page is populate, initialise it
-				res.RootView.InitView(s, nil)
-
-				// w.WriteHeader(http.StatusOK)
-				err = s.RenderView(outfile, res.RootView, "")
-				if err != nil {
-					slog.Error("Render Error: ", "err", res.FullPath, err)
-					// c.Abort()
-				}
-			}
-		*/
+		contbuff := bytes.NewBufferString("")
+		err = proc.RenderContent(outres, contbuff)
+		if err != nil {
+			slog.Warn("Content rendering failed: ", "err", err)
+		} else {
+			_ = proc.RenderResource(outres, contbuff.String(), outfile)
+		}
 	}
-}
-
-func (s *Site) NewView(name string) (view views.View[*Site]) {
-	// TODO - register by caller or have defaults instead of hard coding
-	// Leading to themes
-	if s.NewViewFunc != nil {
-		return s.NewViewFunc(name)
-	}
-	return nil
 }
 
 func (s *Site) GetResourceHandler(rs *Resource) ResourceHandler {

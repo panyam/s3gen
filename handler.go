@@ -1,6 +1,8 @@
 package s3gen
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"path/filepath"
@@ -27,8 +29,13 @@ type ResourceHandler interface {
 	// otherwise an error is returned
 	LoadParamValues(r *Resource) error
 
-	// Sets up the view for a page
-	GetRenderer(res *Resource) func(*Resource, io.Writer) error
+	// Renders just the content section within the resource
+	RenderContent(res *Resource, w io.Writer) error
+
+	// Once the content (ie the main body) is rendered, it needs to be
+	// wrapped up in a larger view so it finally looks like a rendered page
+	// This does that
+	RenderResource(res *Resource, content any, w io.Writer) error
 }
 
 type defaultResourceHandler struct {
@@ -115,6 +122,7 @@ func (m *defaultResourceHandler) GenerateTargets(r *Resource, deps map[string]*R
 		}
 		destres := s.GetResource(destpath)
 		destres.Source = r
+		destres.Page = r.Page
 		destres.frontMatter = r.frontMatter
 		if s.AddEdge(r.FullPath, destres.FullPath) {
 			if deps != nil {
@@ -125,4 +133,66 @@ func (m *defaultResourceHandler) GenerateTargets(r *Resource, deps map[string]*R
 		}
 	}
 	return
+}
+
+func (m *defaultResourceHandler) GetResourceTemplate(res *Resource) (engine string, template PageTemplate, err error) {
+	frontMatter := res.FrontMatter().Data
+
+	// we want to support different kinds of templating engines, renderes etc
+	// which rendering engine to use
+	engine = "views"
+	if frontMatter["engine"] != nil {
+		engine = frontMatter["engine"].(string)
+	}
+
+	// which page template to use
+	template = res.Site.DefaultPageTemplate
+	if frontMatter["template"] != nil {
+		template.Name = frontMatter["template"].(string)
+	}
+	if template.Name == "" && res.Site.GetTemplate != nil {
+		template = res.Site.GetTemplate(res)
+	}
+	if template.Name == "" {
+		template = res.Site.DefaultPageTemplate
+	}
+
+	if frontMatter["templateParams"] != nil {
+		template.Params = frontMatter["templateParams"].(map[any]any)
+	}
+	return
+}
+
+func (m *defaultResourceHandler) RenderResource(outres *Resource, content any, writer io.Writer) error {
+	if outres.Source == nil {
+		log.Println("Resource does not have a source: ", outres.FullPath)
+		return errors.New("resource does not have a source")
+	}
+
+	// we want to support different kinds of templating engines, renderes etc
+	// which rendering engine to use
+	_, template, err := m.GetResourceTemplate(outres.Source)
+	if err != nil {
+		return err
+	}
+	// Assume html template for now
+	params := map[any]any{
+		"Res":         outres,
+		"Site":        outres.Site,
+		"FrontMatter": outres.FrontMatter().Data,
+		"Content":     content,
+	}
+	if template.Params != nil {
+		for k, v := range template.Params {
+			params[k] = v
+		}
+	}
+
+	// TODO - check if this should always pick a html template?
+	err = outres.Site.HtmlTemplate().ExecuteTemplate(writer, template.Name, params)
+	if err != nil {
+		log.Println("Error rendering template: ", outres.FullPath, template, err)
+		_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
+	}
+	return err
 }

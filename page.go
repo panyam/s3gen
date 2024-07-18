@@ -9,6 +9,11 @@ import (
 	gfn "github.com/panyam/goutils/fn"
 )
 
+type PageTemplate struct {
+	Name   string
+	Params map[any]any
+}
+
 // A page in our site.  These are what are finally rendered.
 type DefaultPage struct {
 	// Site this page belongs to - can this be in multiple - then create different

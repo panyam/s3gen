@@ -106,9 +106,7 @@ func (v *BaseView[C]) RenderResponse(writer io.Writer) (err error) {
 }
 
 func (v *BaseView[C]) AddChildViews(views ...View[C]) {
-	for _, child := range views {
-		v.Children = append(v.Children, child)
-	}
+	v.Children = append(v.Children, views...)
 }
 
 func (v *BaseView[C]) ParentView() View[C] {

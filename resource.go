@@ -169,8 +169,8 @@ func (r *Resource) Reader() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	fi.Seek(r.frontMatter.Length, 0)
-	return fi, nil
+	_, err = fi.Seek(r.frontMatter.Length, 0)
+	return fi, err
 }
 
 // Returns true if the resource is a directory
@@ -214,19 +214,8 @@ func (r *Resource) AddParam(param string) *Resource {
 }
 
 func (r *Resource) AddParams(params []string) *Resource {
-	for _, param := range params {
-		r.ParamValues = append(r.ParamValues, param)
-	}
+	r.ParamValues = append(r.ParamValues, params...)
 	return r
-}
-
-func (r *Resource) LoadParamValues() {
-	s := r.Site
-	proc := s.GetResourceHandler(r)
-	if proc != nil && r.State == ResourceStateLoaded {
-		r.ParamValues = nil
-		proc.LoadParamValues(r)
-	}
 }
 
 // Returns the path relative to the content root
