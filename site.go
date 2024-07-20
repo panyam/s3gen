@@ -75,7 +75,7 @@ type Site struct {
 	LazyLoad   bool
 
 	DefaultPageTemplate PageTemplate
-	GetTemplate         func(res *Resource) PageTemplate
+	GetTemplate         func(res *Resource, out *PageTemplate)
 	CreatePage          func(res *Resource)
 
 	BuildFrequency time.Duration
@@ -370,7 +370,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 		rs = s.ListResources(nil, nil, 0, 0)
 	}
 
-	dependents := make(map[string]*Resource)
+	dest_dep_res := make(map[string]*Resource)
 	// Step 1 - Update dependencies and collect affected outputs
 	for _, res := range rs {
 		// now generate the pages here
@@ -397,7 +397,6 @@ func (s *Site) Rebuild(rs []*Resource) {
 		// eg a/b/[animal].md could have a/b/cat/index.html, a/b/dog/index.html and so on
 		// So we need to see if the resource is "final" in which case render it, otherwise
 		// return child resources - that depends on the parent
-
 		if res.IsParametric {
 			slog.Info("Resource Is Parametric: ", "filepath", res.FullPath, "paramvalues", res.ParamValues)
 			err = proc.LoadParamValues(res)
@@ -408,15 +407,14 @@ func (s *Site) Rebuild(rs []*Resource) {
 		}
 
 		// Now generate the dependent resources and add to our list
-		_ = proc.GenerateTargets(res, dependents)
+		_ = proc.GenerateTargets(res, dest_dep_res)
 	}
 
 	// Step 2: Re-Render all affected outputs
-	for path, outres := range dependents {
-		inres := s.GetResource(path)
+	for _, outres := range dest_dep_res {
+		inres := outres.Source
 		proc := s.GetResourceHandler(inres)
 
-		slog.Info("Rendering: ", "respath", path)
 		outres.EnsureDir()
 		outfile, err := os.Create(outres.FullPath)
 		if err != nil {
@@ -427,9 +425,19 @@ func (s *Site) Rebuild(rs []*Resource) {
 
 		// Now setup the view for this parameter specific resource
 		contbuff := bytes.NewBufferString("")
-		err = proc.RenderContent(outres, contbuff)
+		// Bit of a hack - though we rendering the "source", we
+		// need the paramname to be set - and it is only set in outres
+		// so we are temporarily setting it in inres too
+		// TODO - Need a way around this hack - ie somehow call RenderContent
+		// on outres with the right expectation
+		inres.ParamName = outres.ParamName
+		err = proc.RenderContent(inres, contbuff)
+		inres.ParamName = ""
+		if false && strings.HasSuffix(outres.FullPath, "blog/page/2/index.html") {
+			log.Println("inres.ParamName, outres.ParamName, ContBuf: ", inres.ParamName, outres.ParamName, contbuff.String())
+		}
 		if err != nil {
-			slog.Warn("Content rendering failed: ", "err", err)
+			slog.Warn("Content rendering failed: ", "err", err, "path", outres.FullPath)
 		} else {
 			_ = proc.RenderResource(outres, contbuff.String(), outfile)
 		}
@@ -492,6 +500,7 @@ func (s *Site) Watch() {
 
 							// TODO - refer to cache if this need to be rebuilt? or let Rebuild do it?
 							foundResources[fullpath] = res
+							res.Reset()
 						}
 					}
 				case err := <-w.Error:

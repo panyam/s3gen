@@ -32,9 +32,10 @@ type ResourceHandler interface {
 	// Renders just the content section within the resource
 	RenderContent(res *Resource, w io.Writer) error
 
-	// Once the content (ie the main body) is rendered, it needs to be
-	// wrapped up in a larger view so it finally looks like a rendered page
-	// This does that
+	// Once the content (ie the main body) of the source is rendered,
+	// it needs to be wrapped up in a larger view so it finally looks
+	// like a rendered page.  This method should be called on the
+	// Destination resource to perform the final wrapping.
 	RenderResource(res *Resource, content any, w io.Writer) error
 }
 
@@ -72,9 +73,6 @@ func (m *defaultResourceHandler) GenerateTargets(r *Resource, deps map[string]*R
 	}
 
 	if r.IsParametric {
-		// we should *never* come here? because the renderer will ensure
-		// all "child" resources will be created for parameters
-		log.Fatal("Parametric pages wont have a destination path: ", r.FullPath)
 		ext := filepath.Ext(respath)
 
 		rem := respath[:len(respath)-len(ext)]
@@ -86,6 +84,7 @@ func (m *defaultResourceHandler) GenerateTargets(r *Resource, deps map[string]*R
 			destpath := filepath.Join(s.OutputDir, dirname, paramName, "index.html")
 			destres := s.GetResource(destpath)
 			destres.Source = r
+			destres.Page = r.Page
 			destres.frontMatter = r.frontMatter
 			destres.ParamName = paramName
 			if s.AddEdge(r.FullPath, destres.FullPath) {
@@ -146,17 +145,23 @@ func (m *defaultResourceHandler) GetResourceTemplate(res *Resource) (engine stri
 	}
 
 	// which page template to use
-	template = res.Site.DefaultPageTemplate
+
+	if res.Site.GetTemplate != nil {
+		res.Site.GetTemplate(res, &template)
+	}
+
+	// Get any missing template details from the default
+	if template.Name == "" {
+		template.Name = res.Site.DefaultPageTemplate.Name
+	}
+	if template.Params == nil {
+		template.Params = res.Site.DefaultPageTemplate.Params
+	}
+
+	// now see if we can override them what is on the page
 	if frontMatter["template"] != nil {
 		template.Name = frontMatter["template"].(string)
 	}
-	if template.Name == "" && res.Site.GetTemplate != nil {
-		template = res.Site.GetTemplate(res)
-	}
-	if template.Name == "" {
-		template = res.Site.DefaultPageTemplate
-	}
-
 	if frontMatter["templateParams"] != nil {
 		template.Params = frontMatter["templateParams"].(map[any]any)
 	}

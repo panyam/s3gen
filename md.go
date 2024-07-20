@@ -53,7 +53,7 @@ func (m *MDResourceHandler) LoadResource(res *Resource) error {
 	res.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
 
 	// if we are not parametric - then created the destination page
-	// res.Site.CreatePage(res)
+	res.Site.CreatePage(res)
 	// res.Page.LoadFrom(res)
 	return nil
 }
@@ -71,11 +71,9 @@ func (m *MDResourceHandler) LoadParamValues(res *Resource) error {
 
 // Renders just the content section within the resource
 func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
-	site := res.Site
-	mdfile, _ := res.Reader()
-	mddata, _ := io.ReadAll(mdfile)
-	defer mdfile.Close()
+	mddata, _ := res.ReadAll()
 
+	site := res.Site
 	mdTemplate, err := site.TextTemplate().Parse(string(mddata))
 	if err != nil {
 		slog.Error("Template Parse Error: ", "error", err)

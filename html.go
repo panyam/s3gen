@@ -42,7 +42,7 @@ func (m *HTMLResourceHandler) LoadResource(res *Resource) error {
 	res.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
 
 	// if we are not parametric - then created the destination page
-	// res.Site.CreatePage(res)
+	res.Site.CreatePage(res)
 	// res.Page.LoadFrom(res)
 	return nil
 }
@@ -53,7 +53,7 @@ func (m *HTMLResourceHandler) LoadParamValues(res *Resource) error {
 	if err != nil {
 		log.Println("Error executing paramvals template: ", err, res.FullPath)
 	} else {
-		log.Println("Param Values After: ", res.ParamValues, output)
+		slog.Debug("Param Values After: ", "pvals", res.ParamValues, "content", output)
 	}
 	return err
 }
