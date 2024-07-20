@@ -80,6 +80,7 @@ type Site struct {
 
 	BuildFrequency time.Duration
 
+	// A map of template functions available for both text and html templates
 	CommonFuncMap htmpl.FuncMap
 
 	// Global templates dirs
@@ -110,6 +111,7 @@ type Site struct {
 	initialized bool
 }
 
+// Initializes the Site
 func (s *Site) Init() *Site {
 	s.ContentRoot = gut.ExpandUserPath(s.ContentRoot)
 	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
@@ -138,6 +140,7 @@ func (s *Site) PathRelUrl(path string) string {
 	return s.PathPrefix + path
 }
 
+// Returns the default function map to be used in the html templates.
 func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 	return htmpl.FuncMap{
 		"RenderView": func(view views.ViewRenderer) (out template.HTML, err error) {
@@ -164,6 +167,9 @@ func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 	}
 }
 
+// Returns the parsed Text templates used for rendering a given template content
+// If the clone parameter is true then a clone of the template is returned.  This is useful
+// if we ever need to reuse the template while it is in the middle of an execution.
 func (s *Site) TextTemplate(clone bool) *ttmpl.Template {
 	if s.textTemplate == nil {
 		s.textTemplate = ttmpl.New("SiteTextTemplate").
@@ -201,6 +207,9 @@ func (s *Site) TextTemplate(clone bool) *ttmpl.Template {
 	return out
 }
 
+// Returns the parsed HTML templates used for rendering a given template content
+// If the clone parameter is true then a clone of the template is returned.  This is useful
+// if we ever need to reuse the template while it is in the middle of an execution.
 func (s *Site) HtmlTemplate(clone bool) *htmpl.Template {
 	if s.htmlTemplate == nil {
 		s.htmlTemplate = htmpl.New("SiteHtmlTemplate").
@@ -240,13 +249,14 @@ func (s *Site) HtmlTemplate(clone bool) *htmpl.Template {
 	return out
 }
 
+// Add a new static http path and the folder from which its contents can be served.
 func (s *Site) HandleStatic(path, folder string) *Site {
 	s.StaticFolders = append(s.StaticFolders, path)
 	s.StaticFolders = append(s.StaticFolders, folder)
 	return s
 }
 
-// https://benhoyt.com/writings/go-routing/#split-switch
+// Returns a Router instance that can serve this as a site under a larger prefix.
 func (s *Site) GetRouter() *mux.Router {
 	if !s.initialized {
 		s.Init()
@@ -285,17 +295,15 @@ func (s *Site) GetRouter() *mux.Router {
 	return s.filesRouter
 }
 
-// The base entry point for a serving a site with our customer handler
-// This is used for a few  purposes:
-//  1. If you want to serve a static site but want to to have a "refresh" handler.  ie if a source changes, this can catch it and rebuild the necessary things before serving it
-//     2.
+// The base entry point for a serving a site with our customer handler - also implementing the http.Handler interface
 func (s *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The entry point router for our site
-	parts := strings.Split(r.URL.Path, "/")[1:]
-	log.Println("1112 - URL Parts: ", parts)
+	// parts := strings.Split(r.URL.Path, "/")[1:]
+	// log.Println("1112 - URL Parts: ", parts)
 	s.GetRouter().ServeHTTP(w, r)
 }
 
+// A method to list all the resource in our site in the content root.  This method also allows pagination, filtering and sorting of resources.
 func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 	sortFunc ResourceSortFunc,
 	offset int, count int) (foundResources []*Resource) {
@@ -357,10 +365,6 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 // dependant on this resource.   By allowing a list of resources to be processed in a batch
 // it is more efficient to perform batch dependencies instead of doing repeated builds for each
 // change.
-// First get a transitive closure of all resource that depend on it
-// then call the "build" on that resource - which in turn would load
-// all of its dependencies
-// So this is a closure operation on sets of resources each time
 func (s *Site) Rebuild(rs []*Resource) {
 	if !s.initialized {
 		s.Init()
@@ -443,6 +447,8 @@ func (s *Site) Rebuild(rs []*Resource) {
 	}
 }
 
+// Every resource needs a ResourceHandler.  This is a factory method to return one given a resource.
+// TODO - Today there is no way to override this.  In the future this will be turned into a method attribute
 func (s *Site) GetResourceHandler(rs *Resource) ResourceHandler {
 	// normal file
 	// check type and call appropriate processor
@@ -461,6 +467,7 @@ func (s *Site) GetResourceHandler(rs *Resource) ResourceHandler {
 	return nil
 }
 
+// Starts watching for changes to content files so that the site can be rebuilt.
 func (s *Site) Watch() {
 	// Always build once
 	s.Rebuild(nil)
@@ -536,44 +543,12 @@ func (s *Site) Watch() {
 	}
 }
 
+// Disables/Stops watching for changes to content files.
 func (s *Site) StopWatching() {
 	if s.reloadWatcher == nil {
 		s.reloadWatcher.Close()
 		s.reloadWatcher = nil
 	}
-}
-
-// Site extension to render a view
-func (s *Site) RenderView(writer io.Writer, v views.ViewRenderer, templateName string) error {
-	if templateName == "" {
-		templateName = v.TemplateName()
-	}
-	if templateName == "" {
-		templateName = s.DefaultViewTemplate(v)
-		if s.HtmlTemplate(false).Lookup(templateName) == nil {
-			templateName = templateName + ".html"
-		}
-		if s.HtmlTemplate(false).Lookup(templateName) != nil {
-			err := s.HtmlTemplate(false).ExecuteTemplate(writer, templateName, v)
-			if err != nil {
-				log.Println("Error with e.Name().html, Error: ", templateName, err)
-				_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
-			}
-			return err
-		}
-		templateName = ""
-	}
-	if templateName != "" {
-		return s.HtmlTemplate(false).ExecuteTemplate(writer, templateName, v)
-	}
-	// How do you use the View's renderer func here?
-	return v.RenderResponse(writer)
-}
-
-func (s *Site) DefaultViewTemplate(v views.ViewRenderer) string {
-	t := reflect.TypeOf(v)
-	e := t.Elem()
-	return e.Name()
 }
 
 // Renders a html template
@@ -605,4 +580,37 @@ func (s *Site) Json(path string, fieldpath string) (any, error) {
 		return nil, err
 	}
 	return gut.JsonDecodeBytes(data)
+}
+
+// Site extension to render a view
+func (s *Site) RenderView(writer io.Writer, v views.ViewRenderer, templateName string) error {
+	if templateName == "" {
+		templateName = v.TemplateName()
+	}
+	if templateName == "" {
+		templateName = s.defaultViewTemplate(v)
+		if s.HtmlTemplate(false).Lookup(templateName) == nil {
+			templateName = templateName + ".html"
+		}
+		if s.HtmlTemplate(false).Lookup(templateName) != nil {
+			err := s.HtmlTemplate(false).ExecuteTemplate(writer, templateName, v)
+			if err != nil {
+				log.Println("Error with e.Name().html, Error: ", templateName, err)
+				_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
+			}
+			return err
+		}
+		templateName = ""
+	}
+	if templateName != "" {
+		return s.HtmlTemplate(false).ExecuteTemplate(writer, templateName, v)
+	}
+	// How do you use the View's renderer func here?
+	return v.RenderResponse(writer)
+}
+
+func (s *Site) defaultViewTemplate(v views.ViewRenderer) string {
+	t := reflect.TypeOf(v)
+	e := t.Elem()
+	return e.Name()
 }

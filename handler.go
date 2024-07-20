@@ -14,22 +14,24 @@ type ResourceHandler interface {
 	// Loads resource data from the appropriate input path
 	LoadResource(r *Resource) error
 
-	// Generates all target resources for a given resources.
+	// Generates all target/child resources for a given resources.
 	// Note that before this method is called, LoadResource and LoadParamValues
 	// must have be called otherwise this wont work well on resources which are parametric
 	GenerateTargets(r *Resource, deps map[string]*Resource) error
 
-	// Loads the parameter values for a resource
-	// This is seperate from the resource as this is called only for
-	// a paraametric page.  Typically parametric pages will need to know
-	// about everything else in the site so the site and its (leaf) resource
-	// has to be loaded before this is called.  Hence it is seperated from
-	// the normal (leaf) load of a resource.  If the load is successful
-	// thenthe r.ParamValues is set to all the parametrics this page can take
-	// otherwise an error is returned
+	// Loads the parameter values for a resource.  Parametric resources are an important concept.
+	// Parametric resources are a way to ensure that a given reosurce (eg a page) can take several instances.
+	// For example the content page `<content_root>/tags/[tag].md` can resultin multiple files of the form
+	// `<output_folder>/tags/tag1/index.html`, `<output_folder>/tags/tag2/index.html` and so on.  This is
+	// evaluated by rendering the the source file (`<content_root>/tags/[tag].md`)  in the "nameless" mode
+	// where the template would call the AddParam method once for each new child resources (eg tag1, tag2...)
+	// until all param names are resolved.  And then once for each parameter the template is rendered again
+	// so that the correspond output page is generated.  This may seem like a lot but since static sites need
+	// all combinations generated upfront, this is fine as long as the number of variations are small.
+	// This method performs the "nameless" mode rendering to gather all parameter values a parametric page can take.
 	LoadParamValues(r *Resource) error
 
-	// Renders just the content section within the resource
+	// Renders just the content section within the resource so that it can be embedded in the "larger" layout page.
 	RenderContent(res *Resource, w io.Writer) error
 
 	// Once the content (ie the main body) of the source is rendered,

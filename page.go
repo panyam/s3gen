@@ -9,12 +9,14 @@ import (
 	gfn "github.com/panyam/goutils/fn"
 )
 
+// PageTemplates are data used to render a page.  Typically this needs the name of the template
+// being rendered and the (possibly nested) parameters need by that specific template.
 type PageTemplate struct {
 	Name   string
 	Params map[any]any
 }
 
-// A page in our site.  These are what are finally rendered.
+// The default page type.  Each type can have its own page type and can be overridden in the Site.GetPage method.
 type DefaultPage struct {
 	// Site this page belongs to - can this be in multiple - then create different
 	// page instances

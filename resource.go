@@ -61,10 +61,6 @@ type Resource struct {
 	// os level Info about the resource
 	info os.FileInfo
 
-	NeedsIndex   bool
-	IsIndex      bool
-	IsParametric bool
-
 	// Marks whether front matter was loaded
 	frontMatter FrontMatter
 
@@ -80,6 +76,12 @@ type Resource struct {
 	ParamValues []string
 	// Name of the parameter
 	ParamName string
+
+	NeedsIndex bool
+	IsIndex    bool
+
+	// True if the resource is parametric and can result in several instances
+	IsParametric bool
 }
 
 // Load's the resource from disk including any front matter it might have.
@@ -208,11 +210,17 @@ func (r *Resource) FrontMatter() *FrontMatter {
 	return &r.frontMatter
 }
 
+// This methods add a new "parameter" to the resource.  Parametric resources are a way to ensure that a given reosurce (eg a page) can
+// take several instances.  For example the content page `<content_root>/tags/[tag].md` can resultin multiple files of the form
+// `<output_folder>/tags/tag1/index.html`, `<output_folder>/tags/tag2/index.html` and so on.  This is evaluated by rendering the
+// the source file (`<content_root>/tags/[tag].md`)  in the "nameless" mode where the template would call the AddParam method
+// once for each new child resources (eg tag1, tag2...)
 func (r *Resource) AddParam(param string) *Resource {
 	r.ParamValues = append(r.ParamValues, param)
 	return r
 }
 
+// Very similar to the Addparam but allows adding a list of parameters in one call.
 func (r *Resource) AddParams(params []string) *Resource {
 	r.ParamValues = append(r.ParamValues, params...)
 	return r
@@ -227,7 +235,10 @@ func (r *Resource) RelPath() string {
 	return respath
 }
 
+// Types of functions that filter resources (usually in a list call)
 type ResourceFilterFunc func(res *Resource) bool
+
+// Types of function used for sorting of resources.   returns true if a < b, false otherwise.
 type ResourceSortFunc func(a *Resource, b *Resource) bool
 
 // Each Resource may have front matter.  Front matter is lazily loaded and parsed in a resource.
