@@ -74,7 +74,7 @@ func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 	mddata, _ := res.ReadAll()
 
 	site := res.Site
-	mdTemplate, err := site.TextTemplate().Parse(string(mddata))
+	mdTemplate, err := site.TextTemplate(false).Parse(string(mddata))
 	if err != nil {
 		slog.Error("Template Parse Error: ", "error", err)
 		return err

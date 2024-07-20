@@ -64,7 +64,7 @@ func (m *HTMLResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 	mddata, _ := io.ReadAll(mdfile)
 	defer mdfile.Close()
 
-	mdTemplate, err := site.HtmlTemplateClone().Parse(string(mddata))
+	mdTemplate, err := site.HtmlTemplate(true).Parse(string(mddata))
 	if err != nil {
 		slog.Error("Template Clone Error: ", "error", err)
 		return err

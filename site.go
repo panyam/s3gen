@@ -129,30 +129,13 @@ func (s *Site) Init() *Site {
 	return s
 }
 
-func (s *Site) HtmlTemplateClone() *htmpl.Template {
-	s.HtmlTemplate()
-	out, err := s.htmlTemplateClone.Clone()
-	if err != nil {
-		log.Println("Html Template Clone Error: ", err)
-	}
-	return out
-}
-
+// Returns the full url for a path relative to the site's prefix path.
+// If the Site's prefix path is /a/b/c, then PathRelUrl("d") would return /a/b/c/d
 func (s *Site) PathRelUrl(path string) string {
 	if s.PathPrefix == "" || s.PathPrefix == "/" {
 		return path
 	}
 	return s.PathPrefix + path
-}
-
-func (s *Site) TextTemplateClone() *ttmpl.Template {
-	s.TextTemplate()
-	log.Println("TTClone: ", s.textTemplateClone)
-	out, err := s.textTemplateClone.Clone()
-	if err != nil {
-		log.Println("Text Template Clone Error: ", err)
-	}
-	return out
 }
 
 func (s *Site) DefaultFuncMap() htmpl.FuncMap {
@@ -167,13 +150,13 @@ func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 		},
 		"HtmlTemplate": func(templateName string, params any) (out template.HTML, err error) {
 			writer := bytes.NewBufferString("")
-			err = s.HtmlTemplate().ExecuteTemplate(writer, templateName, params)
+			err = s.HtmlTemplate(false).ExecuteTemplate(writer, templateName, params)
 			out = template.HTML(writer.String())
 			return
 		},
 		"TextTemplate": func(templateName string, params any) (out string, err error) {
 			writer := bytes.NewBufferString("")
-			err = s.HtmlTemplate().ExecuteTemplate(writer, templateName, params)
+			err = s.TextTemplate(false).ExecuteTemplate(writer, templateName, params)
 			out = writer.String()
 			return
 		},
@@ -181,7 +164,7 @@ func (s *Site) DefaultFuncMap() htmpl.FuncMap {
 	}
 }
 
-func (s *Site) TextTemplate() *ttmpl.Template {
+func (s *Site) TextTemplate(clone bool) *ttmpl.Template {
 	if s.textTemplate == nil {
 		s.textTemplate = ttmpl.New("SiteTextTemplate").
 			Funcs(s.DefaultFuncMap()).
@@ -207,10 +190,18 @@ func (s *Site) TextTemplate() *ttmpl.Template {
 			log.Println("TextTemplate Clone error: ", err)
 		}
 	}
-	return s.textTemplate
+	out := s.textTemplate
+	if clone {
+		var err error
+		out, err = s.textTemplateClone.Clone()
+		if err != nil {
+			log.Println("Text Template Clone Error: ", err)
+		}
+	}
+	return out
 }
 
-func (s *Site) HtmlTemplate() *htmpl.Template {
+func (s *Site) HtmlTemplate(clone bool) *htmpl.Template {
 	if s.htmlTemplate == nil {
 		s.htmlTemplate = htmpl.New("SiteHtmlTemplate").
 			Funcs(s.DefaultFuncMap()).
@@ -238,7 +229,15 @@ func (s *Site) HtmlTemplate() *htmpl.Template {
 			log.Println("HtmlTemplate Clone error: ", err)
 		}
 	}
-	return s.htmlTemplate
+	out := s.htmlTemplate
+	if clone {
+		var err error
+		out, err = s.htmlTemplateClone.Clone()
+		if err != nil {
+			log.Println("Html Template Clone Error: ", err)
+		}
+	}
+	return out
 }
 
 func (s *Site) HandleStatic(path, folder string) *Site {
@@ -376,7 +375,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 		// now generate the pages here
 		proc := s.GetResourceHandler(res)
 		if proc == nil {
-			log.Println("No resource loader for : ", res.FullPath)
+			log.Println("No resource loader for : ", res.RelPath())
 			// TODO - may be do a defaault handler?
 			continue
 		}
@@ -551,11 +550,11 @@ func (s *Site) RenderView(writer io.Writer, v views.ViewRenderer, templateName s
 	}
 	if templateName == "" {
 		templateName = s.DefaultViewTemplate(v)
-		if s.HtmlTemplate().Lookup(templateName) == nil {
+		if s.HtmlTemplate(false).Lookup(templateName) == nil {
 			templateName = templateName + ".html"
 		}
-		if s.HtmlTemplate().Lookup(templateName) != nil {
-			err := s.HtmlTemplate().ExecuteTemplate(writer, templateName, v)
+		if s.HtmlTemplate(false).Lookup(templateName) != nil {
+			err := s.HtmlTemplate(false).ExecuteTemplate(writer, templateName, v)
 			if err != nil {
 				log.Println("Error with e.Name().html, Error: ", templateName, err)
 				_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
@@ -565,7 +564,7 @@ func (s *Site) RenderView(writer io.Writer, v views.ViewRenderer, templateName s
 		templateName = ""
 	}
 	if templateName != "" {
-		return s.HtmlTemplate().ExecuteTemplate(writer, templateName, v)
+		return s.HtmlTemplate(false).ExecuteTemplate(writer, templateName, v)
 	}
 	// How do you use the View's renderer func here?
 	return v.RenderResponse(writer)
@@ -580,14 +579,14 @@ func (s *Site) DefaultViewTemplate(v views.ViewRenderer) string {
 // Renders a html template
 func (s *Site) RenderHtml(templateName string, params map[string]any) (template.HTML, error) {
 	out := bytes.NewBufferString("")
-	err := s.HtmlTemplate().ExecuteTemplate(out, templateName, params)
+	err := s.HtmlTemplate(false).ExecuteTemplate(out, templateName, params)
 	return template.HTML(out.String()), err
 }
 
 // Renders a text template
 func (s *Site) RenderText(templateName string, params map[string]any) (template.HTML, error) {
 	out := bytes.NewBufferString("")
-	err := s.TextTemplate().ExecuteTemplate(out, templateName, params)
+	err := s.TextTemplate(false).ExecuteTemplate(out, templateName, params)
 	return template.HTML(out.String()), err
 }
 

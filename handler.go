@@ -42,21 +42,15 @@ type ResourceHandler interface {
 type defaultResourceHandler struct {
 }
 
+/*
 func (m *defaultResourceHandler) IsParametric(res *Resource) bool {
 	we := res.WithoutExt(true)
 	base := filepath.Base(we)
 	return base[0] == '[' && base[len(base)-1] == ']'
 }
-
-func (m *defaultResourceHandler) LoadPage(res *Resource, page *Page) error {
-	return nil
-}
+*/
 
 func (m *defaultResourceHandler) LoadParamValues(res *Resource) error {
-	return nil
-}
-
-func (m *defaultResourceHandler) SetupPageView(res *Resource, page *Page) (err error) {
 	return nil
 }
 
@@ -134,7 +128,7 @@ func (m *defaultResourceHandler) GenerateTargets(r *Resource, deps map[string]*R
 	return
 }
 
-func (m *defaultResourceHandler) GetResourceTemplate(res *Resource) (engine string, template PageTemplate, err error) {
+func (m *defaultResourceHandler) getResourceTemplate(res *Resource) (engine string, template PageTemplate, err error) {
 	frontMatter := res.FrontMatter().Data
 
 	// we want to support different kinds of templating engines, renderes etc
@@ -176,7 +170,7 @@ func (m *defaultResourceHandler) RenderResource(outres *Resource, content any, w
 
 	// we want to support different kinds of templating engines, renderes etc
 	// which rendering engine to use
-	_, template, err := m.GetResourceTemplate(outres.Source)
+	_, template, err := m.getResourceTemplate(outres.Source)
 	if err != nil {
 		return err
 	}
@@ -194,7 +188,7 @@ func (m *defaultResourceHandler) RenderResource(outres *Resource, content any, w
 	}
 
 	// TODO - check if this should always pick a html template?
-	err = outres.Site.HtmlTemplate().ExecuteTemplate(writer, template.Name, params)
+	err = outres.Site.HtmlTemplate(false).ExecuteTemplate(writer, template.Name, params)
 	if err != nil {
 		log.Println("Error rendering template: ", outres.FullPath, template, err)
 		_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
