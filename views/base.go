@@ -3,6 +3,7 @@ package views
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -41,6 +42,7 @@ type BaseView[Context any] struct {
 	Template string
 	Children []View[Context]
 	Page     any
+	Loaded   bool
 }
 
 func (v *BaseView[C]) ViewId() string {
@@ -79,15 +81,6 @@ func (v *BaseView[C]) InitView(s C, parent View[C]) {
 	if v.Id == "" {
 		v.Id = fmt.Sprintf("view_%d", time.Now().UnixMilli())
 	}
-	if v.Children != nil {
-		for _, child := range v.Children {
-			if child == nil {
-				// log.Println("Child is nil, idx: ", idx)
-			} else {
-				child.InitView(s, v)
-			}
-		}
-	}
 }
 
 // Sometimes a view may want to validate a request.
@@ -106,7 +99,15 @@ func (v *BaseView[C]) RenderResponse(writer io.Writer) (err error) {
 }
 
 func (v *BaseView[C]) AddChildViews(views ...View[C]) {
-	v.Children = append(v.Children, views...)
+	for idx, child := range views {
+		if child != nil {
+			v.Children = append(v.Children, child)
+			// we can add nil children as views to reserve spots
+			child.InitView(v.Context, v)
+		} else {
+			log.Println("Child is nil, idx: ", idx)
+		}
+	}
 }
 
 func (v *BaseView[C]) ParentView() View[C] {
