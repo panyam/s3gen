@@ -11,13 +11,13 @@ import (
 type ViewRenderer interface {
 	SetTemplate(templateName string)
 	TemplateName() string
-	RenderResponse(writer io.Writer) error
+	RenderResponse(w io.Writer) error
 }
 
 type ViewContainer[Context any] interface {
 	ParentView() View[Context]
-	AddChildViews(views ...View[Context])
-	ChildViews() []View[Context]
+	// ChildViews() []View[Context]
+	// AddChildViews(views ...View[Context])
 }
 
 type ViewPager interface {
@@ -30,9 +30,10 @@ type View[Context any] interface {
 	ViewContainer[Context]
 	ViewRenderer
 
+	InitView(Context, View[Context])
+	SetViewId(string)
 	ViewId() string
-	InitView(context Context, parentView View[Context])
-	ValidateRequest(w http.ResponseWriter, r *http.Request) error
+	LoadFromRequest(r *http.Request) error
 }
 
 type BaseView[Context any] struct {
@@ -40,12 +41,19 @@ type BaseView[Context any] struct {
 	Id       string
 	Context  Context
 	Template string
-	Children []View[Context]
-	Page     any
-	Loaded   bool
+	// Children []View[Context]
+	Page   any
+	Loaded bool
+}
+
+func (v *BaseView[C]) SetViewId(id string) {
+	v.Id = id
 }
 
 func (v *BaseView[C]) ViewId() string {
+	if v.Id == "" {
+		v.Id = fmt.Sprintf("view_%d", time.Now().UnixMilli())
+	}
 	return v.Id
 }
 
@@ -64,38 +72,49 @@ func (v *BaseView[C]) GetPage() any {
 	return v.Page
 }
 
-func (v *BaseView[C]) SetPage(p any) {
-	v.Page = p
-	if v.Children != nil {
-		for _, child := range v.Children {
-			if child != nil {
-				child.SetPage(p)
-			}
-		}
-	}
-}
-
 func (v *BaseView[C]) InitView(s C, parent View[C]) {
 	v.Context = s
 	v.Parent = parent
-	if v.Id == "" {
-		v.Id = fmt.Sprintf("view_%d", time.Now().UnixMilli())
-	}
+}
+
+func (v *BaseView[C]) ParentView() View[C] {
+	return v.Parent
+}
+
+func (v *BaseView[C]) RenderResponse(w io.Writer) error {
+	log.Fatal("RenderResponse not implemented")
+	return nil
 }
 
 // Sometimes a view may want to validate a request.
-func (v *BaseView[C]) ValidateRequest(w http.ResponseWriter, r *http.Request) (err error) {
-	for _, child := range v.Children {
-		err = child.ValidateRequest(w, r)
-		if err != nil {
-			return
+func (v *BaseView[C]) LoadFromRequest(r *http.Request) (err error) {
+	/*
+		for _, child := range v.Children {
+			err = child.LoadFromRequest(r)
+			if err != nil {
+				return
+			}
 		}
-	}
+	*/
 	return
 }
 
-func (v *BaseView[C]) RenderResponse(writer io.Writer) (err error) {
-	return nil
+func (v *BaseView[C]) SetPage(p any) {
+	v.Page = p
+	/*
+		if v.Children != nil {
+			for _, child := range v.Children {
+				if child != nil {
+					child.SetPage(p)
+				}
+			}
+		}
+	*/
+}
+
+/*
+func (v *BaseView[C]) ChildViews() []View[C] {
+	return v.Children
 }
 
 func (v *BaseView[C]) AddChildViews(views ...View[C]) {
@@ -109,11 +128,4 @@ func (v *BaseView[C]) AddChildViews(views ...View[C]) {
 		}
 	}
 }
-
-func (v *BaseView[C]) ParentView() View[C] {
-	return v.Parent
-}
-
-func (v *BaseView[C]) ChildViews() []View[C] {
-	return v.Children
-}
+*/

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -229,6 +228,10 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 	return
 }
 
+func (s *Site) GenerateSitemap() map[string]any {
+	return nil
+}
+
 // This is the heart of the build process.   This method is called with a list of resources that
 // have to be reprocessed (either due to periodic updates or change events etc).   Resources in
 // our site form a graph and each resource is processed by a ResourceHandler appropriate for it
@@ -298,22 +301,20 @@ func (s *Site) Rebuild(rs []*Resource) {
 		defer outfile.Close()
 
 		// Now setup the view for this parameter specific resource
-		contbuff := bytes.NewBufferString("")
+		contentBuffer := bytes.NewBufferString("")
+
 		// Bit of a hack - though we rendering the "source", we
 		// need the paramname to be set - and it is only set in outres
 		// so we are temporarily setting it in inres too
 		// TODO - Need a way around this hack - ie somehow call RenderContent
 		// on outres with the right expectation
 		inres.ParamName = outres.ParamName
-		err = proc.RenderContent(inres, contbuff)
+		err = proc.RenderContent(inres, contentBuffer)
 		inres.ParamName = ""
-		if false && strings.HasSuffix(outres.FullPath, "blog/page/2/index.html") {
-			log.Println("inres.ParamName, outres.ParamName, ContBuf: ", inres.ParamName, outres.ParamName, contbuff.String())
-		}
 		if err != nil {
 			slog.Warn("Content rendering failed: ", "err", err, "path", outres.FullPath)
 		} else {
-			_ = proc.RenderResource(outres, contbuff.String(), outfile)
+			_ = proc.RenderResource(outres, contentBuffer.String(), outfile)
 		}
 	}
 }
@@ -442,5 +443,9 @@ func (s *Site) Json(path string, fieldpath string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return gut.JsonDecodeBytes(data)
+	out, err := gut.JsonDecodeBytes(data)
+	if err != nil {
+		log.Println("Error Decoding Json: ", path, err)
+	}
+	return out, err
 }
