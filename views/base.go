@@ -30,10 +30,10 @@ type View[Context any] interface {
 	ViewContainer[Context]
 	ViewRenderer
 
-	InitView(Context, View[Context])
-	SetViewId(string)
 	ViewId() string
-	LoadFromRequest(r *http.Request) error
+	SetViewId(string)
+	InitView(Context, View[Context])
+	LoadFromRequest(r *http.Request, w http.ResponseWriter) (err error, finished bool)
 }
 
 type BaseView[Context any] struct {
@@ -87,7 +87,7 @@ func (v *BaseView[C]) RenderResponse(w io.Writer) error {
 }
 
 // Sometimes a view may want to validate a request.
-func (v *BaseView[C]) LoadFromRequest(r *http.Request) (err error) {
+func (v *BaseView[C]) LoadFromRequest(r *http.Request, w http.ResponseWriter) (err error, finished bool) {
 	/*
 		for _, child := range v.Children {
 			err = child.LoadFromRequest(r)

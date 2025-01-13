@@ -51,7 +51,7 @@ func (s *TemplateStore) TextTemplate(clone bool) *ttmpl.Template {
 		for _, templatesDir := range s.TextTemplates {
 			t, err := s.textTemplate.ParseGlob(templatesDir)
 			if err != nil {
-				log.Println("Error parsing templates glob: ", templatesDir)
+				log.Println("Error parsing templates glob: ", err, templatesDir)
 			} else {
 				s.textTemplate = t
 				log.Println("Loaded Text Templates")
