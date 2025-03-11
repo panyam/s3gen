@@ -1,6 +1,8 @@
 module github.com/panyam/s3gen
 
-go 1.22
+go 1.23.5
+
+toolchain go1.24.0
 
 require (
 	github.com/adrg/frontmatter v0.2.0
@@ -9,6 +11,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/morrisxyang/xreflect v0.0.0-20231001053442-6df0df9858ba
 	github.com/panyam/goutils v0.1.2
+	github.com/panyam/templar v0.0.1
 	github.com/radovskyb/watcher v1.0.7
 	github.com/yuin/goldmark v1.7.1
 	github.com/yuin/goldmark-highlighting/v2 v2.0.0-20230729083705-37449abec8cc

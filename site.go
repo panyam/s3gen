@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/mux"
 	gfn "github.com/panyam/goutils/fn"
 	gut "github.com/panyam/goutils/utils"
+	gotl "github.com/panyam/templar"
 	"github.com/radovskyb/watcher"
 )
 
@@ -24,7 +25,7 @@ import (
 // to build and serve a static site.  This Site object also provides a http.HandlerFunc which can
 // be used to server it via a http.Server.
 type Site struct {
-	TemplateStore
+	Templates *gotl.TemplateGroup
 
 	// ContentRoot is the root of all your pages.
 	// One structure we want to place is use folders to emphasis url structure too
@@ -424,7 +425,7 @@ func (s *Site) StopWatching() {
 }
 
 func (s *Site) DefaultFuncMap() htmpl.FuncMap {
-	out := s.TemplateStore.DefaultFuncMap()
+	out := s.Templates.DefaultFuncMap()
 	out["json"] = s.Json
 	return out
 }
