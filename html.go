@@ -2,31 +2,21 @@ package s3gen
 
 import (
 	"bytes"
-	htmpl "html/template"
 	"io"
 	"log"
 	"log/slog"
 	"path/filepath"
 	"strings"
+
+	gotl "github.com/panyam/templar"
 )
 
 type HTMLResourceHandler struct {
 	defaultResourceHandler
-	Template *htmpl.Template
 }
 
 func NewHTMLResourceHandler(templatesDir string) *HTMLResourceHandler {
 	h := &HTMLResourceHandler{}
-	h.Template = htmpl.New("hello")
-	if templatesDir != "" {
-		// Funcs(CustomFuncMap()).
-		t, err := h.Template.ParseGlob(templatesDir)
-		if err != nil {
-			log.Println("Error loading dir: ", templatesDir, err)
-		} else {
-			h.Template = t
-		}
-	}
 	return h
 }
 
@@ -64,16 +54,10 @@ func (m *HTMLResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 	mddata, _ := io.ReadAll(mdfile)
 	defer mdfile.Close()
 
-	mdTemplate, err := site.HtmlTemplate(true).Parse(string(mddata))
-	if err != nil {
-		slog.Error("Template Clone Error: ", "error", err)
-		return err
-	}
-	if err != nil {
-		mdTemplate, err = mdTemplate.Parse(string(mddata))
-	}
-	if err != nil {
-		return err
+	template := &gotl.Template{
+		RawSource: mddata,
+		Path:      res.FullPath,
+		AsHtml:    true,
 	}
 
 	params := map[any]any{
@@ -81,9 +65,5 @@ func (m *HTMLResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 		"Site":        res.Site,
 		"FrontMatter": res.FrontMatter().Data,
 	}
-	err = mdTemplate.Execute(w, params)
-	if err != nil {
-		log.Println("Error executing HTML: ", res.FullPath, err)
-	}
-	return err
+	return site.Templates.RenderHtmlTemplate(w, template, params, nil)
 }

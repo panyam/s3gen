@@ -3,7 +3,7 @@ package s3gen
 import (
 	"bytes"
 	"fmt"
-	htmpl "html/template"
+	"html/template"
 	"log"
 	"log/slog"
 	"net/http"
@@ -26,6 +26,11 @@ import (
 // be used to server it via a http.Server.
 type Site struct {
 	Templates *gotl.TemplateGroup
+
+	// Where our templates and loaders are
+	CommonFuncMap   map[string]any
+	TemplateFolders []string
+	LoaderList      *gotl.LoaderList
 
 	// ContentRoot is the root of all your pages.
 	// One structure we want to place is use folders to emphasis url structure too
@@ -93,6 +98,33 @@ type Site struct {
 // Initializes the Site
 func (s *Site) Init() *Site {
 	s.ContentRoot = gut.ExpandUserPath(s.ContentRoot)
+	if s.Templates == nil {
+		s.Templates = gotl.NewTemplateGroup()
+		s.LoaderList = &gotl.LoaderList{}
+		// Default loader is for templates
+		s.LoaderList.DefaultLoader = gotl.NewFileSystemLoader(s.TemplateFolders...)
+		// s.LoaderList.AddLoader(&ContentLoader{s.ContentRoot})
+		s.Templates.Loader = s.LoaderList
+		s.Templates.AddFuncs(gotl.DefaultFuncMap())
+		s.Templates.AddFuncs(s.CommonFuncMap)
+		s.Templates.AddFuncs(map[string]any{
+			"json": s.Json,
+			"HtmlTemplate": func(templateName string, params any) (out template.HTML, err error) {
+				writer := bytes.NewBufferString("")
+				tmpl, err := s.Templates.Loader.Load(templateName, "")
+				if err == nil {
+					if tmpl[0].Name == "" {
+						tmpl[0].Name = templateName
+					}
+					err = s.Templates.RenderHtmlTemplate(writer, tmpl[0], params, nil)
+					out = template.HTML(writer.String())
+				} else {
+					log.Println("ERR: ", err)
+				}
+				return
+			},
+		})
+	}
 	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
 	if s.CreatePage == nil {
 		s.CreatePage = func(res *Resource) {
@@ -422,12 +454,6 @@ func (s *Site) StopWatching() {
 		s.reloadWatcher.Close()
 		s.reloadWatcher = nil
 	}
-}
-
-func (s *Site) DefaultFuncMap() htmpl.FuncMap {
-	out := s.Templates.DefaultFuncMap()
-	out["json"] = s.Json
-	return out
 }
 
 func (s *Site) Json(path string, fieldpath string) (any, error) {

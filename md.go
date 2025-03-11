@@ -7,11 +7,10 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
-	ttmpl "text/template"
 
-	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
+	gotl "github.com/panyam/templar"
 	"github.com/yuin/goldmark"
-	highlighting "github.com/yuin/goldmark-highlighting/v2"
+	highlighting "github.com/yuin/goldmark-highlighting"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
@@ -23,21 +22,10 @@ import (
 
 type MDResourceHandler struct {
 	defaultResourceHandler
-	Template *ttmpl.Template
 }
 
 func NewMDResourceHandler(templatesDir string) *MDResourceHandler {
 	h := &MDResourceHandler{}
-	h.Template = ttmpl.New("hello")
-	if templatesDir != "" {
-		// Funcs(CustomFuncMap()).
-		t, err := h.Template.ParseGlob(templatesDir)
-		if err != nil {
-			log.Println("Error loading dir: ", templatesDir, err)
-		} else {
-			h.Template = t
-		}
-	}
 	return h
 }
 
@@ -73,22 +61,26 @@ func (m *MDResourceHandler) LoadParamValues(res *Resource) error {
 func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 	mddata, _ := res.ReadAll()
 
-	site := res.Site
-	mdTemplate, err := site.TextTemplate(false).Parse(string(mddata))
-	if err != nil {
-		slog.Error("Template Parse Error: ", "error", err)
-		return err
+	template := &gotl.Template{
+		RawSource: mddata,
+		Path:      res.FullPath,
+		AsHtml:    true,
+	}
+
+	params := map[any]any{
+		"Res":         res,
+		"Site":        res.Site,
+		"FrontMatter": res.FrontMatter().Data,
 	}
 
 	finalmd := bytes.NewBufferString("")
-	err = mdTemplate.Execute(finalmd, map[string]any{
-		"Site": site,
-		"Res":  res,
-	})
+	err := site.Templates.RenderTextTemplate(finalmd, template, params, nil)
 	if err != nil {
-		log.Println("Error executing MD: ", res.FullPath, err)
+		log.Println("Error loading template content: ", err, res.FullPath)
+		return err
 	}
 
+	// NOW render this MD
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -96,7 +88,7 @@ func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 			highlighting.NewHighlighting(
 				highlighting.WithStyle("monokai"),
 				highlighting.WithFormatOptions(
-					chromahtml.WithLineNumbers(true),
+				// chromahtml.WithLineNumbers(true),
 				),
 			),
 			&anchor.Extender{},

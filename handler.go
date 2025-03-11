@@ -92,7 +92,7 @@ func (m *defaultResourceHandler) GenerateTargets(r *Resource, deps map[string]*R
 			}
 		}
 	} else {
-		// we have a basic so generate it
+		// we have a basic resource so generate it
 		destpath := ""
 		if r.Info().IsDir() {
 			// Then this will be served with dest/index.html
@@ -190,7 +190,8 @@ func (m *defaultResourceHandler) RenderResource(outres *Resource, content any, w
 	}
 
 	// TODO - check if this should always pick a html template?
-	err = outres.Site.HtmlTemplate(false).ExecuteTemplate(writer, template.Name, params)
+	tmpl, err := outres.Site.Templates.Loader.Load(template.Name, "")
+	err = outres.Site.Templates.RenderHtmlTemplate(writer, tmpl[0], params, nil)
 	if err != nil {
 		log.Println("Error rendering template: ", outres.FullPath, template, err)
 		_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
