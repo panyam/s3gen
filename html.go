@@ -65,5 +65,5 @@ func (m *HTMLResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 		"Site":        res.Site,
 		"FrontMatter": res.FrontMatter().Data,
 	}
-	return site.Templates.RenderHtmlTemplate(w, template, params, nil)
+	return site.Templates.RenderHtmlTemplate(w, template, "", params, nil)
 }

@@ -130,33 +130,24 @@ func (m *defaultResourceHandler) GenerateTargets(r *Resource, deps map[string]*R
 	return
 }
 
-func (m *defaultResourceHandler) getResourceTemplate(res *Resource) (engine string, template PageTemplate, err error) {
+func (m *defaultResourceHandler) getResourceTemplate(res *Resource) (template PageTemplate, err error) {
 	frontMatter := res.FrontMatter().Data
 
-	// we want to support different kinds of templating engines, renderes etc
-	// which rendering engine to use
-	engine = "views"
-	if frontMatter["engine"] != nil {
-		engine = frontMatter["engine"].(string)
-	}
+	// Start with the default
+	template = res.Site.DefaultPageTemplate
 
 	// which page template to use
-
 	if res.Site.GetTemplate != nil {
 		res.Site.GetTemplate(res, &template)
 	}
 
-	// Get any missing template details from the default
-	if template.Name == "" {
-		template.Name = res.Site.DefaultPageTemplate.Name
-	}
-	if template.Params == nil {
-		template.Params = res.Site.DefaultPageTemplate.Params
-	}
-
 	// now see if we can override them what is on the page
-	if frontMatter["template"] != nil {
-		template.Name = frontMatter["template"].(string)
+	if frontMatter["template"] != nil && frontMatter["template"] != "" {
+		templateAndEntry := strings.Split(frontMatter["template"].(string), "/")
+		template.Name = templateAndEntry[0]
+		if len(templateAndEntry) > 1 {
+			template.Entry = templateAndEntry[1]
+		}
 	}
 	if frontMatter["templateParams"] != nil {
 		template.Params = frontMatter["templateParams"].(map[any]any)
@@ -172,7 +163,7 @@ func (m *defaultResourceHandler) RenderResource(outres *Resource, content any, w
 
 	// we want to support different kinds of templating engines, renderes etc
 	// which rendering engine to use
-	_, template, err := m.getResourceTemplate(outres.Source)
+	template, err := m.getResourceTemplate(outres.Source)
 	if err != nil {
 		return err
 	}
@@ -191,9 +182,14 @@ func (m *defaultResourceHandler) RenderResource(outres *Resource, content any, w
 
 	// TODO - check if this should always pick a html template?
 	tmpl, err := outres.Site.Templates.Loader.Load(template.Name, "")
-	err = outres.Site.Templates.RenderHtmlTemplate(writer, tmpl[0], params, nil)
+	if err != nil {
+		panic(err)
+		return err
+	}
+	err = outres.Site.Templates.RenderHtmlTemplate(writer, tmpl[0], template.Entry, params, nil)
 	if err != nil {
 		log.Println("Error rendering template: ", outres.FullPath, template, err)
+		log.Println("Contents: ", string(tmpl[0].RawSource))
 		_, err = writer.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
 	}
 	return err

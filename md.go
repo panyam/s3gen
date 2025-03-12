@@ -74,7 +74,7 @@ func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 	}
 
 	finalmd := bytes.NewBufferString("")
-	err := res.Site.Templates.RenderTextTemplate(finalmd, template, params, nil)
+	err := res.Site.Templates.RenderTextTemplate(finalmd, template, "", params, nil)
 	if err != nil {
 		log.Println("Error loading template content: ", err, res.FullPath)
 		return err

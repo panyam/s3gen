@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -63,6 +64,9 @@ type Site struct {
 	// types are denoted by extensions for now later on we could do something else
 	ResourceHandlers map[string]ResourceHandler
 
+	// Glob of all resources that will just pass through from content root -> output
+	PassthroughGlobs []string
+
 	// When walking the content root for files, this callback specify which directories
 	// are to be ignored.
 	IgnoreDirFunc func(dirpath string) bool
@@ -109,14 +113,14 @@ func (s *Site) Init() *Site {
 		s.Templates.AddFuncs(s.CommonFuncMap)
 		s.Templates.AddFuncs(map[string]any{
 			"json": s.Json,
-			"HtmlTemplate": func(templateName string, params any) (out template.HTML, err error) {
+			"HtmlTemplate": func(templateFile, templateName string, params any) (out template.HTML, err error) {
 				writer := bytes.NewBufferString("")
-				tmpl, err := s.Templates.Loader.Load(templateName, "")
+				tmpl, err := s.Templates.Loader.Load(templateFile, "")
 				if err == nil {
 					if tmpl[0].Name == "" {
 						tmpl[0].Name = templateName
 					}
-					err = s.Templates.RenderHtmlTemplate(writer, tmpl[0], params, nil)
+					err = s.Templates.RenderHtmlTemplate(writer, tmpl[0], templateName, params, nil)
 					out = template.HTML(writer.String())
 				} else {
 					log.Println("ERR: ", err)
@@ -253,6 +257,9 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 		foundResources = foundResources[offset:]
 	}
 	if count > 0 {
+		if count > len(foundResources) {
+			count = len(foundResources)
+		}
 		foundResources = foundResources[:count]
 	}
 	if err != nil {
@@ -286,8 +293,23 @@ func (s *Site) Rebuild(rs []*Resource) {
 		// now generate the pages here
 		proc := s.GetResourceHandler(res)
 		if proc == nil {
-			log.Println("No resource loader for : ", res.RelPath())
-			// TODO - may be do a defaault handler?
+			respath, found := strings.CutPrefix(res.FullPath, s.ContentRoot)
+			if !found {
+				log.Println("Respath not found: ", res.FullPath, s.ContentRoot)
+			} else {
+				destpath := filepath.Join(s.OutputDir, respath)
+				destres := s.GetResource(destpath)
+				destres.Source = res
+				destres.EnsureDir()
+				log.Println("Copying No resource loader for : ", res.RelPath(), ", copying over to: ", destpath)
+				data, err := res.ReadAll()
+				if err != nil {
+					log.Println("Could not read resource: ", res.FullPath, err)
+				} else {
+					os.WriteFile(destres.FullPath, data, 0666)
+				}
+			}
+
 			continue
 		}
 
