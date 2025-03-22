@@ -9,6 +9,23 @@ import (
 	"strings"
 )
 
+// Instead of a single "handler" what we have just stages a resources goes through
+// Read -> Parse -> Generate Targets (other resources) -> Render Resources
+
+// Loads and parses a resource.  This ensures that a resource's Document will now return a valid value.
+type ResourceParser interface {
+	Parse(res *Resource) any
+}
+
+type ResourceProcessor interface {
+	GenerateTargets(res *Resource, deps map[string]*Resource) error
+}
+
+// Render's a resource onto an output stream.
+type ResourceRenderer interface {
+	Render(res *Resource, w *io.Writer) any
+}
+
 // Loads a resource of diferent types from storage
 type ResourceHandler interface {
 	// Loads resource data from the appropriate input path
