@@ -81,6 +81,7 @@ func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 	}
 
 	// NOW render this MD
+	tocTransformer := NewTOCTransformer()
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -96,7 +97,11 @@ func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
 			parser.WithASTTransformers(
-				util.Prioritized(&preCodeWrapper{}, 100),
+				// util.Prioritized(&preCodeWrapper{}, 100),
+				util.PrioritizedValue{
+					Value:    tocTransformer,
+					Priority: 100,
+				},
 			),
 		),
 		goldmark.WithRendererOptions(
@@ -114,6 +119,10 @@ func (m *MDResourceHandler) RenderContent(res *Resource, w io.Writer) error {
 	if err := md.Convert(finalmd.Bytes(), &buf); err != nil {
 		slog.Error("error converting md: ", "error", err)
 		return err
+	}
+
+	res.DocMetadata = map[string]any{
+		"TOC": tocTransformer.TOC,
 	}
 
 	_, err = w.Write(buf.Bytes())
