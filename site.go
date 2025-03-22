@@ -2,7 +2,6 @@ package s3gen
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	gfn "github.com/panyam/goutils/fn"
 	gut "github.com/panyam/goutils/utils"
 	gotl "github.com/panyam/templar"
 	"github.com/radovskyb/watcher"
@@ -273,7 +271,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 	dest_dep_res := make(map[string]*Resource)
 	// Step 1 - Update dependencies and collect affected outputs
 	for _, res := range rs {
-		// now generate the pages here
+		// now generate the targets here
 		proc := s.GetResourceHandler(res)
 		if proc == nil {
 			respath, found := strings.CutPrefix(res.FullPath, s.ContentRoot)
@@ -375,88 +373,4 @@ func (s *Site) GetResourceHandler(rs *Resource) ResourceHandler {
 	}
 	// log.Println("Could not find proc for, Name, Ext: ", rs.FullPath, ext)
 	return nil
-}
-
-// Starts watching for changes to content files so that the site can be rebuilt.
-func (s *Site) Watch() {
-	// Always build once
-	s.Rebuild(nil)
-
-	if s.reloadWatcher == nil {
-		w := watcher.New()
-		s.reloadWatcher = w
-
-		go func() {
-			buildFreq := s.BuildFrequency
-			if buildFreq <= 0 {
-				buildFreq = 1000 * time.Millisecond
-			}
-			tickerChan := time.NewTicker(buildFreq)
-			defer tickerChan.Stop()
-
-			foundResources := make(map[string]*Resource)
-			for {
-				select {
-				case event := <-w.Event:
-					fmt.Println(event) // Print the event's info.
-					log.Println("Collecting Event: ", event)
-
-					fullpath := event.Path
-					info, err := os.Stat(fullpath)
-					if err != nil {
-						fmt.Println("Error with file: ", event.Path, err)
-						continue
-					}
-
-					// only deal with files
-					if !info.IsDir() && (s.IgnoreFileFunc == nil || !s.IgnoreFileFunc(fullpath)) {
-						res := s.GetResource(fullpath)
-						if res != nil {
-							// map fullpath to a resource here
-
-							// TODO - refer to cache if this need to be rebuilt? or let Rebuild do it?
-							foundResources[fullpath] = res
-							res.Reset()
-						}
-					}
-				case err := <-w.Error:
-					log.Fatalln(err)
-				case <-w.Closed:
-					// Stop building and uit
-					return
-				case <-tickerChan.C:
-					// if we have things in the collected files - kick off a rebuild
-					if len(foundResources) > 0 {
-						log.Println("files collected so far: ", foundResources)
-
-						s.Rebuild(gfn.MapValues(foundResources))
-						// reset changed files
-						foundResources = make(map[string]*Resource)
-					}
-					break
-				}
-			}
-		}()
-
-		log.Println("Adding files recursive: ", s.ContentRoot)
-		if err := w.AddRecursive(s.ContentRoot); err != nil {
-			log.Fatalln("Error adding files recursive: ", s.ContentRoot, err)
-		}
-
-		// start the watching process
-		go func() {
-			log.Println("Starting watcher...")
-			if err := w.Start(time.Millisecond * 100); err != nil {
-				log.Fatal("Error starting watcher...", err)
-			}
-		}()
-	}
-}
-
-// Disables/Stops watching for changes to content files.
-func (s *Site) StopWatching() {
-	if s.reloadWatcher == nil {
-		s.reloadWatcher.Close()
-		s.reloadWatcher = nil
-	}
 }
