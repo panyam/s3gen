@@ -12,6 +12,8 @@ import (
 // Loads a resource of diferent types from storage
 type ResourceHandler interface {
 	// Loads resource data from the appropriate input path
+	// This method should take care of validating are source and parsing its content
+	// so that a resource's "document" can be fetched when needed
 	LoadResource(r *Resource) error
 
 	// Generates all target/child resources for a given resources.
@@ -173,6 +175,10 @@ func (m *defaultResourceHandler) RenderResource(outres *Resource, content any, w
 		"Site":        outres.Site,
 		"FrontMatter": outres.FrontMatter().Data,
 		"Content":     content,
+	}
+	if outres.Source.DocMetadata != nil {
+		// HACK: this only as in site.go we are doing that whole inres.ParamName = "...." biz
+		outres.DocMetadata = outres.Source.DocMetadata
 	}
 	if template.Params != nil {
 		for k, v := range template.Params {
