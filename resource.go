@@ -64,6 +64,9 @@ type Resource struct {
 	// Marks whether front matter was loaded
 	frontMatter FrontMatter
 
+	// Extra metadata for the document
+	DocMetadata any
+
 	// The destination page if this resource is for a target page
 	Page any
 

@@ -3,7 +3,6 @@ package s3gen
 import (
 	"bytes"
 	"fmt"
-	"html/template"
 	"log"
 	"log/slog"
 	"net/http"
@@ -110,24 +109,8 @@ func (s *Site) Init() *Site {
 		// s.LoaderList.AddLoader(&ContentLoader{s.ContentRoot})
 		s.Templates.Loader = s.LoaderList
 		s.Templates.AddFuncs(gotl.DefaultFuncMap())
+		s.Templates.AddFuncs(s.DefaultFuncMap())
 		s.Templates.AddFuncs(s.CommonFuncMap)
-		s.Templates.AddFuncs(map[string]any{
-			"json": s.Json,
-			"HtmlTemplate": func(templateFile, templateName string, params any) (out template.HTML, err error) {
-				writer := bytes.NewBufferString("")
-				tmpl, err := s.Templates.Loader.Load(templateFile, "")
-				if err == nil {
-					if tmpl[0].Name == "" {
-						tmpl[0].Name = templateName
-					}
-					err = s.Templates.RenderHtmlTemplate(writer, tmpl[0], templateName, params, nil)
-					out = template.HTML(writer.String())
-				} else {
-					log.Println("ERR: ", err)
-				}
-				return
-			},
-		})
 	}
 	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
 	if s.CreatePage == nil {
@@ -476,25 +459,4 @@ func (s *Site) StopWatching() {
 		s.reloadWatcher.Close()
 		s.reloadWatcher = nil
 	}
-}
-
-func (s *Site) Json(path string, fieldpath string) (any, error) {
-	if path[0] == '/' {
-		return nil, fmt.Errorf("Invalid json file: %s.  Cannot start with a /", path)
-	}
-	fullpath := gut.ExpandUserPath(filepath.Join(s.ContentRoot, path))
-	res := s.GetResource(fullpath)
-	if res.Ext() != ".json" {
-		return nil, fmt.Errorf("Invalid json file: %s, Ext: %s", fullpath, res.Ext())
-	}
-
-	data, err := res.ReadAll()
-	if err != nil {
-		return nil, err
-	}
-	out, err := gut.JsonDecodeBytes(data)
-	if err != nil {
-		log.Println("Error Decoding Json: ", path, err)
-	}
-	return out, err
 }
