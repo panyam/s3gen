@@ -20,14 +20,6 @@ func (s *Site) GetResource(fullpath string) *Resource {
 		s.resources[fullpath] = res
 	}
 
-	// Try to load it too
-	/*
-		res.Load()
-		if res.Info() == nil {
-			log.Println("Resource info is null: ", res.FullPath)
-		}
-	*/
-
 	return res
 }
 
