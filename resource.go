@@ -11,8 +11,59 @@ import (
 	"github.com/adrg/frontmatter"
 )
 
+// Instead of a single "handler" what we have just stages a resources goes through
+// Read -> Parse -> Generate Targets (other resources) -> Render Resources
+
+// Loads and parses a resource.  This ensures that a resource's Document will now return a valid value.
+type ResourceLoader interface {
+	Load(res *Resource) error
+}
+
+type ResourceProcessor interface {
+	GenerateTargets(res *Resource, deps map[string]*Resource) error
+}
+
+// Render's a resource onto an output stream.
+type ResourceRenderer interface {
+	Render(res *Resource, w io.Writer) error
+}
+
 type Page interface {
 	LoadFrom(*Resource) error
+}
+
+// Each Resource may have front matter.  Front matter is lazily loaded and parsed in a resource.
+// Our Resources specifically keep a reference to the front matter which can be used later on
+// during rendering
+type FrontMatter struct {
+	// Whether the front matter for the resource has been loaded or not
+	Loaded bool
+
+	// Parsed data from front matter
+	Data map[string]any
+
+	// Length of the frontmatter in bytes (will be set after it is loaded)
+	Length int64
+}
+
+// Each Resource can be parsed into a document.  The document is the AST that can be transformed
+// by otherways by various callers to annotate what ever info they need.  eg some targets may
+// want to build a TOC out of a parsed Markdown.  So just haveint he MD in parsed form lets us
+// do all kinds of transformations.  Where as others may want to filter all sections into
+// some form etc.
+type Document struct {
+	// Whether the document has been loaded and parsed
+	Loaded bool
+
+	// When the document was loaded (if at all)
+	LoadedAt time.Time
+
+	// Root of the parsed document tree
+	Root any
+
+	// This is a way to store extra MD about a document after it has been parsed.
+	// eg this would be a place to store a document's TOC if/when needed by some downstream
+	Metadata map[string]any
 }
 
 const (
@@ -32,13 +83,21 @@ const (
 	ResourceStateFailed
 )
 
+type ResourceBase any
+
 // All files in our site are represented by the Resource type.
 // Each resource in identified by a unique path.   A resource can be processed
 // or transformed to result in more Resources (eg an input post markdown resource
 // would be rendered as an output html resource).
 type Resource struct {
+	ResourceBase
+
 	// The Site that owns this resources.  Resources belong to a site and cannot be shared across multiple sites
 	Site *Site
+
+	// The loader responsible for loading the doocument for this resource when needed
+	Loader   ResourceLoader
+	Renderer ResourceRenderer
 
 	// Fullpath of the Resource uniquely identifying it within a Site
 	FullPath string
@@ -49,9 +108,6 @@ type Resource struct {
 	// Updated time stamp on disk
 	UpdatedAt time.Time
 
-	// The resource this is derived/copied/rendered from. This will only be set for output resources
-	Source *Resource
-
 	// The ResourceState - Loaded, Pending, NotFound, Failed
 	State int
 
@@ -61,14 +117,18 @@ type Resource struct {
 	// os level Info about the resource
 	info os.FileInfo
 
-	// Marks whether front matter was loaded
+	// This will be set by the parser
 	frontMatter FrontMatter
-
-	// Extra metadata for the document
-	DocMetadata any
+	Document    Document
 
 	// The destination page if this resource is for a target page
 	Page any
+
+	// The resource this is derived/copied/rendered from. This will only be set for output resources
+	Source *Resource
+
+	// True if the resource is parametric and can result in several instances
+	IsParametric bool
 
 	// If this is a parametric resources - this returns the space of all parameters
 	// possible for this resource based on how it is loaded and its config it takes
@@ -82,12 +142,10 @@ type Resource struct {
 
 	NeedsIndex bool
 	IsIndex    bool
-
-	// True if the resource is parametric and can result in several instances
-	IsParametric bool
 }
 
 // Load's the resource from disk including any front matter it might have.
+/*
 func (r *Resource) Load() *Resource {
 	s := r.Site
 	proc := s.GetResourceHandler(r)
@@ -101,6 +159,7 @@ func (r *Resource) Load() *Resource {
 	}
 	return r
 }
+*/
 
 // Reset's the Resource's state to Pending so it can be reloaded
 func (r *Resource) Reset() {
@@ -108,6 +167,7 @@ func (r *Resource) Reset() {
 	r.info = nil
 	r.Error = nil
 	r.frontMatter.Loaded = false
+	r.Document.Loaded = false
 	r.Page = nil
 	r.ParamValues = nil
 }
@@ -169,12 +229,13 @@ func (r *Resource) ReadAll() ([]byte, error) {
 func (r *Resource) Reader() (io.ReadCloser, error) {
 	// Read the content
 	r.FrontMatter()
+	pos := r.frontMatter.Length
 
 	fi, err := os.Open(r.FullPath)
 	if err != nil {
 		return nil, err
 	}
-	_, err = fi.Seek(r.frontMatter.Length, 0)
+	_, err = fi.Seek(pos, 0)
 	return fi, err
 }
 
@@ -243,17 +304,3 @@ type ResourceFilterFunc func(res *Resource) bool
 
 // Types of function used for sorting of resources.   returns true if a < b, false otherwise.
 type ResourceSortFunc func(a *Resource, b *Resource) bool
-
-// Each Resource may have front matter.  Front matter is lazily loaded and parsed in a resource.
-// Our Resources specifically keep a reference to the front matter which can be used later on
-// during rendering
-type FrontMatter struct {
-	// Whether the front matter for the resource has been loaded or not
-	Loaded bool
-
-	// Parsed data from front matter
-	Data map[string]any
-
-	// Length of the frontmatter in bytes (will be set after it is loaded)
-	Length int64
-}

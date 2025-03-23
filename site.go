@@ -57,13 +57,6 @@ type Site struct {
 	// [ path1, folder1, path2, folder2, path3, folder3 ....]
 	StaticFolders []string
 
-	// ResourceHandlers tell us how to "process" a content of a given type.
-	// types are denoted by extensions for now later on we could do something else
-	ResourceHandlers map[string]ResourceHandler
-
-	// Glob of all resources that will just pass through from content root -> output
-	PassthroughGlobs []string
-
 	// When walking the content root for files, this callback specify which directories
 	// are to be ignored.
 	IgnoreDirFunc func(dirpath string) bool
@@ -260,6 +253,31 @@ func (s *Site) GenerateSitemap() map[string]any {
 // dependant on this resource.   By allowing a list of resources to be processed in a batch
 // it is more efficient to perform batch dependencies instead of doing repeated builds for each
 // change.
+func (s *Site) LoadResource(res *Resource) error {
+	res.Loader = s.GetResourceLoader(res)
+	return res.Loader.Load(res)
+}
+
+func (s *Site) LoadParamValues(res *Resource) (err error) {
+	if res.IsParametric {
+		output := bytes.NewBufferString("")
+		if res.ParamName != "" {
+			panic("param name should have been empty")
+		}
+		err = res.Renderer.Render(res, output)
+		if err != nil {
+			log.Println("Error executing paramvals template: ", err, res.FullPath)
+		} else {
+			log.Println("Param Values After: ", res.ParamValues, output)
+		}
+		slog.Info("Resource Is Parametric: ", "filepath", res.FullPath, "paramvalues", res.ParamValues)
+		if err != nil {
+			log.Println("Error loading param values: ", res.FullPath, err)
+		}
+	}
+	return
+}
+
 func (s *Site) Rebuild(rs []*Resource) {
 	if !s.initialized {
 		s.Init()
@@ -269,11 +287,15 @@ func (s *Site) Rebuild(rs []*Resource) {
 	}
 
 	dest_dep_res := make(map[string]*Resource)
+
 	// Step 1 - Update dependencies and collect affected outputs
 	for _, res := range rs {
-		// now generate the targets here
-		proc := s.GetResourceHandler(res)
-		if proc == nil {
+		// make sure the resource is loaded
+		res.Loader = s.GetResourceLoader(res)
+		res.Renderer = s.GetResourceRenderer(res)
+
+		if res.Loader == nil || res.Renderer == nil {
+			// this could just be passthrough
 			respath, found := strings.CutPrefix(res.FullPath, s.ContentRoot)
 			if !found {
 				log.Println("Respath not found: ", res.FullPath, s.ContentRoot)
@@ -291,86 +313,141 @@ func (s *Site) Rebuild(rs []*Resource) {
 				}
 			}
 
+			// TODO - what if the resource was inside a parametric folder?
 			continue
 		}
 
-		err := proc.LoadResource(res)
-		if err != nil {
-			log.Println("Error loading resource: ", res.FullPath, err)
+		res.Loader.Load(res)
+
+		if s.LoadParamValues(res) != nil {
 			continue
 		}
 
-		// The site maintains a dependency graph between resources.
-		// The handler is responsible for updating this dependency list for a given
-		// resource so we can track changes, rebuilds etc
-
-		// For every resource - there can be one or more "destination" resources
-		// eg a/b/c/d.md its dest resource would be outdir/a/b/c/d/index.html
-		// if it is parametric it can have several destination resources
-		// eg a/b/[animal].md could have a/b/cat/index.html, a/b/dog/index.html and so on
-		// So we need to see if the resource is "final" in which case render it, otherwise
-		// return child resources - that depends on the parent
-		if res.IsParametric {
-			slog.Info("Resource Is Parametric: ", "filepath", res.FullPath, "paramvalues", res.ParamValues)
-			err = proc.LoadParamValues(res)
-			if err != nil {
-				log.Println("Error loading param values: ", res.FullPath, err)
-				continue
-			}
-		}
-
-		// Now generate the dependent resources and add to our list
-		_ = proc.GenerateTargets(res, dest_dep_res)
+		// seems generic enough so will keep it here
+		s.GenerateTargets(res, dest_dep_res)
 	}
 
 	// Step 2: Re-Render all affected outputs
 	for _, outres := range dest_dep_res {
-		inres := outres.Source
-		proc := s.GetResourceHandler(inres)
-
-		outres.EnsureDir()
-		outfile, err := os.Create(outres.FullPath)
-		if err != nil {
-			log.Println("Error writing to: ", outres.FullPath, err)
-			continue
-		}
-		defer outfile.Close()
-
-		// Now setup the view for this parameter specific resource
-		contentBuffer := bytes.NewBufferString("")
-
-		// Bit of a hack - though we rendering the "source", we
-		// need the paramname to be set - and it is only set in outres
-		// so we are temporarily setting it in inres too
-		// TODO - Need a way around this hack - ie somehow call RenderContent
-		// on outres with the right expectation
-		inres.ParamName = outres.ParamName
-		err = proc.RenderContent(inres, contentBuffer)
-		inres.ParamName = ""
-		if err != nil {
-			slog.Warn("Content rendering failed: ", "err", err, "path", outres.FullPath)
-		} else {
-			_ = proc.RenderResource(outres, contentBuffer.String(), outfile)
-		}
+		s.RenderOutputResource(outres)
 	}
 }
 
-// Every resource needs a ResourceHandler.  This is a factory method to return one given a resource.
-// TODO - Today there is no way to override this.  In the future this will be turned into a method attribute
-func (s *Site) GetResourceHandler(rs *Resource) ResourceHandler {
-	// normal file
-	// check type and call appropriate processor
-	// Should we call processor directly here or collect a list and
-	// pass that to Rebuild with those resources?
-	ext := filepath.Ext(rs.FullPath)
+// Get the loader for a particular resource
+func (s *Site) GetResourceLoader(rs *Resource) ResourceLoader {
+	ext := rs.Ext()
 
 	// TODO - move to a table lookup or regex based one
 	if ext == ".mdx" || ext == ".md" {
-		return NewMDResourceHandler("")
+		return NewMDResourceLoader()
 	}
 	if ext == ".html" || ext == ".htm" {
-		return NewHTMLResourceHandler("")
+		return NewHTMLResourceLoader()
 	}
-	// log.Println("Could not find proc for, Name, Ext: ", rs.FullPath, ext)
 	return nil
+}
+
+func (s *Site) GetResourceRenderer(rs *Resource) ResourceRenderer {
+	ext := rs.Ext()
+
+	// TODO - move to a table lookup or regex based one
+	if ext == ".mdx" || ext == ".md" {
+		return NewMDResourceRenderer()
+	}
+	if ext == ".html" || ext == ".htm" {
+		return NewHTMLResourceRenderer()
+	}
+	return nil
+}
+
+// Generates all target resources for a given resources.
+// Note that before this method is called, LoadResource and LoadParamValues
+// must have be called otherwise this wont work well on resources which are parametric
+func (s *Site) GenerateTargets(r *Resource, deps map[string]*Resource) (err error) {
+	s.RemoveEdgesFrom(r.FullPath)
+	respath, found := strings.CutPrefix(r.FullPath, s.ContentRoot)
+	if !found {
+		log.Println("Respath not found: ", r.FullPath, s.ContentRoot)
+		return nil
+	}
+
+	if r.IsParametric {
+		ext := filepath.Ext(respath)
+
+		rem := respath[:len(respath)-len(ext)]
+		dirname := filepath.Dir(rem)
+
+		// TODO - also see if there is a .<lang> prefix on rem after
+		// ext has been removed can use that for language sites
+		for _, paramName := range r.ParamValues {
+			destpath := filepath.Join(s.OutputDir, dirname, paramName, "index.html")
+			destres := s.GetResource(destpath)
+			destres.Source = r
+			destres.Page = r.Page
+			destres.frontMatter = r.frontMatter
+			destres.ParamName = paramName
+			if s.AddEdge(r.FullPath, destres.FullPath) {
+				if deps != nil {
+					deps[destres.FullPath] = destres
+				}
+			} else {
+				log.Printf("Found cycle with edge from %s -> %s", r.FullPath, destres.FullPath)
+			}
+		}
+	} else {
+		// we have a basic resource so generate it
+		destpath := ""
+		if r.Info().IsDir() {
+			// Then this will be served with dest/index.html
+			destpath = filepath.Join(s.OutputDir, respath)
+		} else if r.IsIndex {
+			destpath = filepath.Join(s.OutputDir, filepath.Dir(respath), "index.html")
+		} else if r.NeedsIndex {
+			// res is not a dir - eg it something like xyz.ext
+			// depending on ext - if the ext is for a page file
+			// then generate OutDir/xyz/index.html
+			// otherwise OutDir/xyz.ext
+			ext := filepath.Ext(respath)
+
+			rem := respath[:len(respath)-len(ext)]
+
+			// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
+			// can use that for language sites
+			destpath = filepath.Join(s.OutputDir, rem, "index.html")
+		} else {
+			// basic static file - so copy as is
+			destpath = filepath.Join(s.OutputDir, respath)
+		}
+		destres := s.GetResource(destpath)
+		destres.Source = r
+		destres.Page = r.Page
+		destres.frontMatter = r.frontMatter
+		if s.AddEdge(r.FullPath, destres.FullPath) {
+			if deps != nil {
+				deps[destres.FullPath] = destres
+			}
+		} else {
+			log.Printf("Found cycle with edge from %s -> %s", r.FullPath, destres.FullPath)
+		}
+	}
+	return
+}
+
+func (s *Site) RenderOutputResource(outres *Resource) error {
+	outres.EnsureDir()
+	outfile, err := os.Create(outres.FullPath)
+	if err != nil {
+		log.Println("Error writing to: ", outres.FullPath, err)
+	}
+	defer outfile.Close()
+
+	// Now setup the view for this parameter specific resource
+	contentBuffer := bytes.NewBufferString("")
+
+	// Bit of a hack - though we rendering the "source", we
+	// need the paramname to be set - and it is only set in outres
+	// so we are temporarily setting it in inres too
+	// TODO - Need a way around this hack - ie somehow call RenderContent
+	// on outres with the right expectation
+	return outres.Renderer.Render(outres, contentBuffer)
 }

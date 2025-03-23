@@ -127,17 +127,5 @@ func (page *DefaultPage) LoadFrom(res *Resource) error {
 	} else {
 		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
 	}
-
-	/*
-		pageName := "BasePage"
-		if frontMatter["page"] != nil && frontMatter["page"] != "" {
-			pageName = frontMatter["page"].(string)
-		}
-		page.RootView = site.NewView(pageName)
-		if page.RootView == nil {
-			log.Println("Could not find view: ", pageName)
-		}
-		page.RootView.SetPage(page)
-	*/
 	return nil
 }
