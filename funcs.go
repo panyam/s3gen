@@ -52,8 +52,8 @@ func (s *Site) LeafPages(hideDrafts bool, orderby string, offset, count any) (ou
 			orderby = orderby[1:]
 		}
 		sortFunc = func(res1, res2 *Resource) bool {
-			d1 := res1.Page.(*DefaultPage)
-			d2 := res2.Page.(*DefaultPage)
+			d1 := res1.Base.(*DefaultResourceBase)
+			d2 := res2.Base.(*DefaultResourceBase)
 			if d1 == nil || d2 == nil {
 				log.Println("D1: ", res1.FullPath)
 				log.Println("D2: ", res2.FullPath)
@@ -106,7 +106,7 @@ func (s *Site) GetPagesByTag(tag string, hideDrafts bool, desc bool, offset, cou
 					return false
 				}
 			}
-			tags := res.Page.(*DefaultPage).Tags
+			tags := res.Base.(*DefaultResourceBase).Tags
 			for _, t := range tags {
 				if t == tag {
 					return true
@@ -120,14 +120,14 @@ func (s *Site) GetPagesByTag(tag string, hideDrafts bool, desc bool, offset, cou
 			// && (strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx"))
 		},
 		func(res1, res2 *Resource) bool {
-			d1 := res1.Page.(*DefaultPage)
-			d2 := res2.Page.(*DefaultPage)
+			d1 := res1.Base.(*DefaultResourceBase)
+			d2 := res2.Base.(*DefaultResourceBase)
 			if d1 == nil || d2 == nil {
 				log.Println("D1: ", res1.FullPath)
 				log.Println("D2: ", res2.FullPath)
 				return false
 			}
-			sub := res1.Page.(*DefaultPage).CreatedAt.Sub(res2.Page.(*DefaultPage).CreatedAt)
+			sub := res1.Base.(*DefaultResourceBase).CreatedAt.Sub(res2.Base.(*DefaultResourceBase).CreatedAt)
 			if desc {
 				return sub > 0
 			} else {
@@ -155,8 +155,8 @@ func (s *Site) GetPagesByDate(hideDrafts bool, desc bool, offset, count any) (ou
 			// && (strings.HasSuffix(res.FullPath, ".md") || strings.HasSuffix(res.FullPath, ".mdx"))
 		},
 		func(res1, res2 *Resource) bool {
-			d1 := res1.Page.(*DefaultPage)
-			d2 := res2.Page.(*DefaultPage)
+			d1 := res1.Base.(*DefaultResourceBase)
+			d2 := res2.Base.(*DefaultResourceBase)
 			if d1 == nil || d2 == nil {
 				log.Println("D1: ", res1.FullPath)
 				log.Println("D2: ", res2.FullPath)

@@ -69,9 +69,9 @@ type Site struct {
 	LiveReload bool
 	LazyLoad   bool
 
-	DefaultPageTemplate PageTemplate
-	GetTemplate         func(res *Resource, out *PageTemplate)
-	CreatePage          func(res *Resource)
+	DefaultBaseTemplate BaseTemplate
+	GetTemplate         func(res *Resource, out *BaseTemplate)
+	CreateResourceBase  func(res *Resource)
 
 	BuildFrequency time.Duration
 
@@ -104,11 +104,10 @@ func (s *Site) Init() *Site {
 		s.Templates.AddFuncs(s.CommonFuncMap)
 	}
 	s.OutputDir = gut.ExpandUserPath(s.OutputDir)
-	if s.CreatePage == nil {
-		s.CreatePage = func(res *Resource) {
-			p := &DefaultPage{Res: res, Site: res.Site}
-			res.Page = p
-			if err := p.LoadFrom(res); err != nil {
+	if s.CreateResourceBase == nil {
+		s.CreateResourceBase = func(res *Resource) {
+			res.Base = &DefaultResourceBase{Res: res}
+			if err := res.Base.LoadFrom(res); err != nil {
 				log.Println("error loading page: ", err)
 			}
 		}
@@ -383,7 +382,7 @@ func (s *Site) GenerateTargets(r *Resource, deps map[string]*Resource) (err erro
 			destpath := filepath.Join(s.OutputDir, dirname, paramName, "index.html")
 			destres := s.GetResource(destpath)
 			destres.Source = r
-			destres.Page = r.Page
+			destres.Base = r.Base
 			destres.frontMatter = r.frontMatter
 			destres.ParamName = paramName
 			if s.AddEdge(r.FullPath, destres.FullPath) {
@@ -420,7 +419,7 @@ func (s *Site) GenerateTargets(r *Resource, deps map[string]*Resource) (err erro
 		}
 		destres := s.GetResource(destpath)
 		destres.Source = r
-		destres.Page = r.Page
+		destres.Base = r.Base
 		destres.frontMatter = r.frontMatter
 		if s.AddEdge(r.FullPath, destres.FullPath) {
 			if deps != nil {

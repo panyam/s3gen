@@ -96,7 +96,7 @@ func (m *MDResourceLoader) Load(r *Resource) error {
 	r.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
 
 	// TODO - this needs to go - nothing magical about "Page"
-	r.Site.CreatePage(r)
+	r.Site.CreateResourceBase(r)
 
 	return nil
 }
