@@ -263,13 +263,14 @@ func (s *Site) LoadParamValues(res *Resource) (err error) {
 		if res.ParamName != "" {
 			panic("param name should have been empty")
 		}
+		log.Println("Rendering param values: ", res.FullPath)
 		err = res.Renderer.Render(res, output)
 		if err != nil {
 			log.Println("Error executing paramvals template: ", err, res.FullPath)
 		} else {
 			log.Println("Param Values After: ", res.ParamValues, output)
 		}
-		slog.Info("Resource Is Parametric: ", "filepath", res.FullPath, "paramvalues", res.ParamValues)
+		slog.Info("Resource Is Parametric: ", "filepath", res.FullPath, "paramvalues", res.ParamValues, "err", err)
 		if err != nil {
 			log.Println("Error loading param values: ", res.FullPath, err)
 		}
@@ -291,9 +292,8 @@ func (s *Site) Rebuild(rs []*Resource) {
 	for _, res := range rs {
 		// make sure the resource is loaded
 		res.Loader = s.GetResourceLoader(res)
-		res.Renderer = s.GetResourceRenderer(res)
 
-		if res.Loader == nil || res.Renderer == nil {
+		if res.Loader == nil {
 			// this could just be passthrough
 			respath, found := strings.CutPrefix(res.FullPath, s.ContentRoot)
 			if !found {
@@ -303,7 +303,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 				destres := s.GetResource(destpath)
 				destres.Source = res
 				destres.EnsureDir()
-				log.Println("Copying No resource loader for : ", res.RelPath(), ", copying over to: ", destpath)
+				// log.Println("Copying No resource loader for : ", res.RelPath(), ", copying over to: ", destpath)
 				data, err := res.ReadAll()
 				if err != nil {
 					log.Println("Could not read resource: ", res.FullPath, err)
@@ -317,6 +317,12 @@ func (s *Site) Rebuild(rs []*Resource) {
 		}
 
 		res.Loader.Load(res)
+
+		// Temporary
+		if res.IsParametric {
+			log.Println("Skipping parametric: ", res.FullPath)
+			continue
+		}
 
 		if s.LoadParamValues(res) != nil {
 			continue
@@ -347,9 +353,11 @@ func (s *Site) GetResourceLoader(rs *Resource) ResourceLoader {
 }
 
 func (s *Site) GetResourceRenderer(rs *Resource) ResourceRenderer {
-	ext := rs.Ext()
+	src := rs.Source
+	ext := src.Ext()
 
-	// TODO - move to a table lookup or regex based one
+	// Right now we are always targeting .html files.
+	// This is usually a function of src -> dst type
 	if ext == ".mdx" || ext == ".md" {
 		return NewMDResourceRenderer()
 	}
@@ -385,6 +393,8 @@ func (s *Site) GenerateTargets(r *Resource, deps map[string]*Resource) (err erro
 			destres.Base = r.Base
 			destres.frontMatter = r.frontMatter
 			destres.ParamName = paramName
+			destres.Renderer = s.GetResourceRenderer(destres)
+
 			if s.AddEdge(r.FullPath, destres.FullPath) {
 				if deps != nil {
 					deps[destres.FullPath] = destres
@@ -421,6 +431,7 @@ func (s *Site) GenerateTargets(r *Resource, deps map[string]*Resource) (err erro
 		destres.Source = r
 		destres.Base = r.Base
 		destres.frontMatter = r.frontMatter
+		destres.Renderer = s.GetResourceRenderer(destres)
 		if s.AddEdge(r.FullPath, destres.FullPath) {
 			if deps != nil {
 				deps[destres.FullPath] = destres
@@ -448,5 +459,9 @@ func (s *Site) RenderOutputResource(outres *Resource) error {
 	// so we are temporarily setting it in inres too
 	// TODO - Need a way around this hack - ie somehow call RenderContent
 	// on outres with the right expectation
+	if outres.Renderer == nil {
+		log.Printf("Renderer not found from (%s) -> (%s): ", outres.Source.FullPath, outres.FullPath)
+		return nil
+	}
 	return outres.Renderer.Render(outres, contentBuffer)
 }
