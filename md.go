@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	gotl "github.com/panyam/templar"
 	"github.com/yuin/goldmark"
@@ -23,97 +22,18 @@ import (
 	"go.abhg.dev/goldmark/anchor"
 )
 
-type MDResourceLoader struct {
-}
-
-func NewMDResourceLoader() *MDResourceLoader {
-	return &MDResourceLoader{}
-}
-
-func (m *MDResourceLoader) Load(r *Resource) error {
-	r.FrontMatter()
-	if r.Error != nil {
-		return r.Error
-	}
-
-	// Load the rest of the content so we can parse it
-	source, err := r.ReadAll()
-	if err != nil {
-		return err
-	}
-
-	template := &gotl.Template{
-		RawSource: source,
-		Path:      r.FullPath,
-		AsHtml:    true,
-	}
-
-	params := map[any]any{
-		"Res":  r,
-		"Site": r.Site,
-		// "FrontMatter": res.FrontMatter().Data,
-	}
-
-	finalmd := bytes.NewBufferString("")
-	err = r.Site.Templates.RenderTextTemplate(finalmd, template, "", params, nil)
-	if err != nil {
-		log.Println("Error loading template content: ", err, r.FullPath)
-		return err
-	}
-
-	// and parse it markdown content
-	tocTransformer := NewTOCTransformer()
-	md := goldmark.New(
-		goldmark.WithExtensions(
-			extension.GFM,
-			extension.Strikethrough,
-			extension.Typographer,
-			highlighting.NewHighlighting(
-				highlighting.WithStyle("monokai"),
-				highlighting.WithFormatOptions(
-				// chromahtml.WithLineNumbers(true),
-				),
-			),
-			&anchor.Extender{},
-		),
-		goldmark.WithParserOptions(
-			parser.WithAutoHeadingID(),
-			parser.WithASTTransformers(
-				// util.Prioritized(&preCodeWrapper{}, 100),
-				util.PrioritizedValue{
-					Value:    tocTransformer,
-					Priority: 100,
-				},
-			),
-		),
-	)
-
+/*
+	doc := md.Parser().Parse(text.NewReader(finalmd.Bytes()))
 	r.Document.Loaded = true
 	r.Document.LoadedAt = time.Now()
 	r.Document.SetMetadata("TOC", tocTransformer.TOC)
-	doc := md.Parser().Parse(text.NewReader(source))
-	log.Println("Did we parse this: ", r.FullPath, doc)
 	r.Document.Root = doc
-
-	// Other basic book keeping
-	base := filepath.Base(r.FullPath)
-	r.IsIndex = base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
-	r.NeedsIndex = strings.HasSuffix(r.FullPath, ".md") || strings.HasSuffix(r.FullPath, ".mdx")
-
-	base = filepath.Base(r.WithoutExt(true))
-	r.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
-
-	// TODO - this needs to go - nothing magical about "Page"
-	r.Site.CreateResourceBase(r)
-
-	return nil
-}
+*/
 
 // A rule that converts <ContentRoot>/a/b/c.md -> <OutputDir>/a/b/c/index.html
 // by Applying the root template defined in c.md as is
 type MDToHtml struct {
 	BaseToHtmlRule
-	Loader              MDResourceLoader
 	DefaultBaseTemplate string
 }
 
@@ -152,11 +72,26 @@ func (m *MDToHtml) MD() (md goldmark.Markdown, tocTransformer *TOCTransformer) {
 }
 
 func (m *MDToHtml) TargetsFor(s *Site, r *Resource) (siblings []*Resource, targets []*Resource) {
-	m.Loader.Load(r)
+	m.LoadResource(s, r)
 	return m.BaseToHtmlRule.TargetsFor(s, r)
 }
 
-func (m *MDToHtml) loadContent(md goldmark.Markdown, r *Resource) ([]byte, error) {
+func (m *MDToHtml) LoadResource(site *Site, r *Resource) error {
+	// Other basic book keeping
+	base := filepath.Base(r.FullPath)
+	r.IsIndex = base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
+	r.NeedsIndex = strings.HasSuffix(r.FullPath, ".md") || strings.HasSuffix(r.FullPath, ".mdx")
+
+	base = filepath.Base(r.WithoutExt(true))
+	r.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
+
+	// TODO - this needs to go - nothing magical about "Page"
+	r.Site.CreateResourceBase(r)
+
+	return nil
+}
+
+func (m *MDToHtml) LoadResourceTemplate(site *Site, r *Resource) ([]byte, error) {
 	r.FrontMatter()
 	if r.Error != nil {
 		return nil, r.Error
@@ -186,7 +121,8 @@ func (m *MDToHtml) loadContent(md goldmark.Markdown, r *Resource) ([]byte, error
 		log.Println("Error loading template content: ", err, r.FullPath)
 		return nil, err
 	}
-	return finalmd.Bytes(), err
+
+	return finalmd.Bytes(), nil
 }
 
 // Generate the output resource for a related set of "input" targets
@@ -217,35 +153,51 @@ func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource) erro
 		// return err
 	}
 
-	md, _ := m.MD()
+	finalmd, err := m.LoadResourceTemplate(site, inres)
 
 	params := map[any]any{
 		"Site":        site,
 		"Res":         inres,
 		"FrontMatter": inres.FrontMatter().Data,
-		"Content":     inres.Document.Root,
+		"Content":     finalmd,
 	}
 	if template.Params != nil {
 		maps.Copy(params, template.Params)
 	}
 
-	log.Println("Entry Template: ", template.Entry, params)
+	localData := map[string]any{}
+
+	md, tocTransformer := m.MD()
 	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, map[string]any{
+		"StageSet": func(key string, value any, kvpairs ...any) any {
+			for i := -2; i < len(kvpairs); i += 2 {
+				if i >= 0 {
+					key = kvpairs[i].(string)
+					value = kvpairs[i+1]
+				}
+				localData[key] = value
+			}
+			return ""
+		},
+		"StageGet": func(key string) any {
+			return localData[key]
+		},
 		"ParseMD": func(content []byte) (*struct {
 			Doc *ast.Document
-			TOC []*TOCNode
+			TOC []TOCNode
 		}, error) {
-			return nil, nil
+			doc := md.Parser().Parse(text.NewReader(content))
+			return &(struct {
+				Doc *ast.Document
+				TOC []TOCNode
+			}{
+				Doc: doc.(*ast.Document),
+				TOC: tocTransformer.TOC,
+			}), nil
 		},
 		"MDToHtml": func(doc *ast.Document) (htmpl.HTML, error) {
 			var b bytes.Buffer
-			src, err := inres.ReadAll()
-			if err != nil {
-				return htmpl.HTML(err.Error()), err
-			}
-			err = md.Renderer().Render(&b, src, doc)
-			log.Println("Called md2html: ", doc)
-			log.Println("Error: ", err)
+			err = md.Renderer().Render(&b, finalmd, doc)
 			return htmpl.HTML(b.String()), err
 		},
 	})
