@@ -5,7 +5,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"strings"
+
+	"github.com/yuin/goldmark"
+	highlighting "github.com/yuin/goldmark-highlighting"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/renderer/html"
+	"go.abhg.dev/goldmark/anchor"
 )
 
 // BaseTemplates are data used to render a page.  Typically this needs the name of the template
@@ -44,9 +51,7 @@ func (m *BaseResourceRenderer) Render(outres *Resource, w io.Writer) error {
 		"Content":     inres.Document.Root,
 	}
 	if template.Params != nil {
-		for k, v := range template.Params {
-			params[k] = v
-		}
+		maps.Copy(params, template.Params)
 	}
 
 	// TODO - check if this should always pick a html template?
@@ -59,7 +64,7 @@ func (m *BaseResourceRenderer) Render(outres *Resource, w io.Writer) error {
 	if err != nil {
 		log.Println("Error rendering template: ", outres.FullPath, template, err)
 		log.Println("Contents: ", string(tmpl[0].RawSource))
-		_, err = w.Write([]byte(fmt.Sprintf("Template error: %s", err.Error())))
+		_, err = w.Write(fmt.Appendf(nil, "Template error: %s", err.Error()))
 	}
 	return err
 }
@@ -87,4 +92,32 @@ func (m *BaseResourceRenderer) getResourceTemplate(res *Resource) (template Base
 		template.Params = frontMatter["templateParams"].(map[any]any)
 	}
 	return
+}
+
+type MDResourceRenderer struct {
+	BaseResourceRenderer
+	md goldmark.Markdown
+}
+
+func NewMDResourceRenderer() (out *MDResourceRenderer) {
+	out = &MDResourceRenderer{}
+	out.md = goldmark.New(
+		goldmark.WithExtensions(
+			extension.GFM,
+			extension.Typographer,
+			highlighting.NewHighlighting(
+				highlighting.WithStyle("monokai"),
+				highlighting.WithFormatOptions(
+				// chromahtml.WithLineNumbers(true),
+				),
+			),
+			&anchor.Extender{},
+		),
+		goldmark.WithRendererOptions(
+			html.WithHardWraps(),
+			html.WithXHTML(),
+			html.WithUnsafe(),
+		),
+	)
+	return out
 }

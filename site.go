@@ -73,6 +73,10 @@ type Site struct {
 	GetTemplate         func(res *Resource, out *BaseTemplate)
 	CreateResourceBase  func(res *Resource)
 
+	BuildRules     []Rule
+	DefaultRule    Rule
+	resourceInRule map[string]map[Rule]bool
+
 	BuildFrequency time.Duration
 
 	// All files including published files will be served from here!
@@ -92,6 +96,14 @@ type Site struct {
 // Initializes the Site
 func (s *Site) Init() *Site {
 	s.ContentRoot = gut.ExpandUserPath(s.ContentRoot)
+	s.resourceInRule = map[string]map[Rule]bool{}
+	if len(s.BuildRules) == 0 {
+		// setup some defaults
+		s.BuildRules = []Rule{
+			&MDToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".md", ".mdx"}}},
+			&HTMLToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".htm", ".html"}}},
+		}
+	}
 	if s.Templates == nil {
 		s.Templates = gotl.NewTemplateGroup()
 		s.LoaderList = &gotl.LoaderList{}
@@ -245,18 +257,6 @@ func (s *Site) GenerateSitemap() map[string]any {
 	return nil
 }
 
-// This is the heart of the build process.   This method is called with a list of resources that
-// have to be reprocessed (either due to periodic updates or change events etc).   Resources in
-// our site form a graph and each resource is processed by a ResourceHandler appropriate for it
-// The content processor can create more resources that may need an update because they are
-// dependant on this resource.   By allowing a list of resources to be processed in a batch
-// it is more efficient to perform batch dependencies instead of doing repeated builds for each
-// change.
-func (s *Site) LoadResource(res *Resource) error {
-	res.Loader = s.GetResourceLoader(res)
-	return res.Loader.Load(res)
-}
-
 func (s *Site) LoadParamValues(res *Resource) (err error) {
 	if res.IsParametric {
 		output := bytes.NewBufferString("")
@@ -286,182 +286,100 @@ func (s *Site) Rebuild(rs []*Resource) {
 		rs = s.ListResources(nil, nil, 0, 0)
 	}
 
-	dest_dep_res := make(map[string]*Resource)
-
-	// Step 1 - Update dependencies and collect affected outputs
 	for _, res := range rs {
-		// make sure the resource is loaded
-		res.Loader = s.GetResourceLoader(res)
+		if res.FullPath != "/Users/sri/personal/golang/leetcoach/content/casestudies/bitly/index.md" {
+			continue
+		}
+		for _, rule := range s.BuildRules {
+			if s.resourceMatchedByRule(res, rule) {
+				// this rule has already matched this resource and will be processed
+				// so skip this rule
+				continue
+			}
 
-		if res.Loader == nil {
-			// this could just be passthrough
-			respath, found := strings.CutPrefix(res.FullPath, s.ContentRoot)
-			if !found {
-				log.Println("Respath not found: ", res.FullPath, s.ContentRoot)
+			// now see if this rule can process this rule
+			siblings, targets := rule.TargetsFor(s, res)
+			if targets == nil {
+				// rule cannot do anything with it
+				continue
+			}
+
+			// TODO - See if cycle checking needed
+
+			s.addRuleForResource(res, rule)
+
+			// And run the rule
+			allres := append(siblings, res)
+			if err := rule.Run(s, allres, targets); err != nil {
+				log.Println("Error generating targest for res: ", res.FullPath, err)
+			}
+		}
+	}
+
+	// Now go through all resources that did NOT match any rules and pass them through the default rule - which is
+	// activated when no other rules match
+	for _, res := range rs {
+		if res.Ext() == ".md" || res.Ext() == ".html" {
+			continue
+		}
+		if !s.resourceMatchedARule(res) {
+			// log.Println("Default Matching: ", res.FullPath)
+			// apply the default rule on this
+			rule := s.DefaultRule
+			if rule != nil {
+				siblings, targets := rule.TargetsFor(s, res)
+				if targets == nil {
+					// rule cannot do anything with it
+					continue
+				}
+
+				// Dont add the rule for this resource
+				allres := append(siblings, res)
+				if err := rule.Run(s, allres, targets); err != nil {
+					log.Println("Error generating targest for res: ", res.FullPath, err)
+				}
 			} else {
-				destpath := filepath.Join(s.OutputDir, respath)
-				destres := s.GetResource(destpath)
-				destres.Source = res
-				destres.EnsureDir()
-				// log.Println("Copying No resource loader for : ", res.RelPath(), ", copying over to: ", destpath)
-				data, err := res.ReadAll()
-				if err != nil {
-					log.Println("Could not read resource: ", res.FullPath, err)
+				// log.Println("No rule found, copying: ", res.FullPath)
+				// if no default rule then just copy it over
+				respath, found := strings.CutPrefix(res.FullPath, s.ContentRoot)
+				if !found {
+					log.Println("Respath not found: ", res.FullPath, s.ContentRoot)
 				} else {
-					os.WriteFile(destres.FullPath, data, 0666)
+					destpath := filepath.Join(s.OutputDir, respath)
+					destres := s.GetResource(destpath)
+					destres.Source = res
+					destres.EnsureDir()
+					// log.Println("Copying No resource loader for : ", res.RelPath(), ", copying over to: ", destpath)
+					data, err := res.ReadAll()
+					if err != nil {
+						log.Println("Could not read resource: ", res.FullPath, err)
+					} else {
+						os.WriteFile(destres.FullPath, data, 0666)
+					}
 				}
 			}
-
-			// TODO - what if the resource was inside a parametric folder?
-			continue
 		}
-
-		res.Loader.Load(res)
-
-		// Temporary
-		if res.IsParametric {
-			log.Println("Skipping parametric: ", res.FullPath)
-			continue
-		}
-
-		if s.LoadParamValues(res) != nil {
-			continue
-		}
-
-		// seems generic enough so will keep it here
-		s.GenerateTargets(res, dest_dep_res)
-	}
-
-	// Step 2: Re-Render all affected outputs
-	for _, outres := range dest_dep_res {
-		s.RenderOutputResource(outres)
 	}
 }
 
-// Get the loader for a particular resource
-func (s *Site) GetResourceLoader(rs *Resource) ResourceLoader {
-	ext := rs.Ext()
-
-	// TODO - move to a table lookup or regex based one
-	if ext == ".mdx" || ext == ".md" {
-		return NewMDResourceLoader()
+func (s *Site) resourceMatchedByRule(res *Resource, rule Rule) bool {
+	if s.resourceInRule[res.FullPath] == nil {
+		return false
 	}
-	if ext == ".html" || ext == ".htm" {
-		return NewHTMLResourceLoader()
-	}
-	return nil
+	return s.resourceInRule[res.FullPath][rule]
 }
 
-func (s *Site) GetResourceRenderer(rs *Resource) ResourceRenderer {
-	src := rs.Source
-	ext := src.Ext()
-
-	// Right now we are always targeting .html files.
-	// This is usually a function of src -> dst type
-	if ext == ".mdx" || ext == ".md" {
-		return NewMDResourceRenderer()
+func (s *Site) addRuleForResource(res *Resource, rule Rule) {
+	if s.resourceInRule[res.FullPath] == nil {
+		s.resourceInRule[res.FullPath] = map[Rule]bool{}
 	}
-	if ext == ".html" || ext == ".htm" {
-		return NewHTMLResourceRenderer()
-	}
-	return nil
+	s.resourceInRule[res.FullPath][rule] = true
 }
 
-// Generates all target resources for a given resources.
-// Note that before this method is called, LoadResource and LoadParamValues
-// must have be called otherwise this wont work well on resources which are parametric
-func (s *Site) GenerateTargets(r *Resource, deps map[string]*Resource) (err error) {
-	s.RemoveEdgesFrom(r.FullPath)
-	respath, found := strings.CutPrefix(r.FullPath, s.ContentRoot)
-	if !found {
-		log.Println("Respath not found: ", r.FullPath, s.ContentRoot)
-		return nil
+// Tells if a particular sibling was "Activated" by a given rule
+func (s *Site) resourceMatchedARule(res *Resource) bool {
+	if s.resourceInRule[res.FullPath] == nil {
+		return false
 	}
-
-	if r.IsParametric {
-		ext := filepath.Ext(respath)
-
-		rem := respath[:len(respath)-len(ext)]
-		dirname := filepath.Dir(rem)
-
-		// TODO - also see if there is a .<lang> prefix on rem after
-		// ext has been removed can use that for language sites
-		for _, paramName := range r.ParamValues {
-			destpath := filepath.Join(s.OutputDir, dirname, paramName, "index.html")
-			destres := s.GetResource(destpath)
-			destres.Source = r
-			destres.Base = r.Base
-			destres.frontMatter = r.frontMatter
-			destres.ParamName = paramName
-			destres.Renderer = s.GetResourceRenderer(destres)
-
-			if s.AddEdge(r.FullPath, destres.FullPath) {
-				if deps != nil {
-					deps[destres.FullPath] = destres
-				}
-			} else {
-				log.Printf("Found cycle with edge from %s -> %s", r.FullPath, destres.FullPath)
-			}
-		}
-	} else {
-		// we have a basic resource so generate it
-		destpath := ""
-		if r.Info().IsDir() {
-			// Then this will be served with dest/index.html
-			destpath = filepath.Join(s.OutputDir, respath)
-		} else if r.IsIndex {
-			destpath = filepath.Join(s.OutputDir, filepath.Dir(respath), "index.html")
-		} else if r.NeedsIndex {
-			// res is not a dir - eg it something like xyz.ext
-			// depending on ext - if the ext is for a page file
-			// then generate OutDir/xyz/index.html
-			// otherwise OutDir/xyz.ext
-			ext := filepath.Ext(respath)
-
-			rem := respath[:len(respath)-len(ext)]
-
-			// TODO - also see if there is a .<lang> prefix on rem after ext has been removed
-			// can use that for language sites
-			destpath = filepath.Join(s.OutputDir, rem, "index.html")
-		} else {
-			// basic static file - so copy as is
-			destpath = filepath.Join(s.OutputDir, respath)
-		}
-		destres := s.GetResource(destpath)
-		destres.Source = r
-		destres.Base = r.Base
-		destres.frontMatter = r.frontMatter
-		destres.Renderer = s.GetResourceRenderer(destres)
-		if s.AddEdge(r.FullPath, destres.FullPath) {
-			if deps != nil {
-				deps[destres.FullPath] = destres
-			}
-		} else {
-			log.Printf("Found cycle with edge from %s -> %s", r.FullPath, destres.FullPath)
-		}
-	}
-	return
-}
-
-func (s *Site) RenderOutputResource(outres *Resource) error {
-	outres.EnsureDir()
-	outfile, err := os.Create(outres.FullPath)
-	if err != nil {
-		log.Println("Error writing to: ", outres.FullPath, err)
-	}
-	defer outfile.Close()
-
-	// Now setup the view for this parameter specific resource
-	contentBuffer := bytes.NewBufferString("")
-
-	// Bit of a hack - though we rendering the "source", we
-	// need the paramname to be set - and it is only set in outres
-	// so we are temporarily setting it in inres too
-	// TODO - Need a way around this hack - ie somehow call RenderContent
-	// on outres with the right expectation
-	if outres.Renderer == nil {
-		log.Printf("Renderer not found from (%s) -> (%s): ", outres.Source.FullPath, outres.FullPath)
-		return nil
-	}
-	return outres.Renderer.Render(outres, contentBuffer)
+	return true
 }

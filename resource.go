@@ -68,6 +68,13 @@ type Document struct {
 	Metadata map[string]any
 }
 
+func (d *Document) SetMetadata(k string, v any) {
+	if d.Metadata == nil {
+		d.Metadata = map[string]any{}
+	}
+	d.Metadata[k] = v
+}
+
 const (
 	// When a resource is first encountered it is in pending state to indicate it needs to be loaded
 	ResourceStatePending = iota
@@ -107,6 +114,9 @@ type Resource struct {
 
 	// Updated time stamp on disk
 	UpdatedAt time.Time
+
+	// When it was loaded (and parsed)
+	LoadedAt time.Time
 
 	// The ResourceState - Loaded, Pending, NotFound, Failed
 	State int
