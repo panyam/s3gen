@@ -5,6 +5,7 @@ import (
 	"fmt"
 	htmpl "html/template"
 	"log"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -138,6 +139,7 @@ func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, func
 		},
 	})
 
+	slog.Debug("Rendering with Template", "inres", inres.FullPath, "template", template.Name, "entry", template.Entry)
 	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, funcs)
 	if err != nil {
 		log.Println("Error rendering template: ", outres.FullPath, template, err)
