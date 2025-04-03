@@ -76,6 +76,77 @@ func (m *MDToHtml) TargetsFor(s *Site, r *Resource) (siblings []*Resource, targe
 	return m.BaseToHtmlRule.TargetsFor(s, r)
 }
 
+// Generate the output resource for a related set of "input" targets
+func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, funcs map[string]any) error {
+	if len(inputs) != 1 || len(targets) != 1 {
+		// This rule can only match 1 input to one output
+		return panicOrError(fmt.Errorf("Exactly 1 input and output needed, found %d, %d", len(inputs), len(targets)))
+	}
+
+	inres := inputs[0]
+	template, err := m.getResourceTemplate(inres)
+	if err != nil {
+		return panicOrError(err)
+	}
+
+	tmpl, err := site.Templates.Loader.Load(template.Name, "")
+	if err != nil {
+		return panicOrError(err)
+	}
+
+	outres := targets[0]
+	outres.EnsureDir()
+	outfile, err := os.Create(outres.FullPath)
+	if err != nil {
+		log.Println("Error writing to: ", outres.FullPath, err)
+		return panicOrError(err)
+	}
+	defer outfile.Close()
+
+	finalmd, err := m.LoadResourceTemplate(site, inres)
+
+	params := map[any]any{
+		"Site":        site,
+		"Res":         inres,
+		"FrontMatter": inres.FrontMatter().Data,
+		"Content":     finalmd,
+	}
+	if template.Params != nil {
+		maps.Copy(params, template.Params)
+	}
+
+	md, tocTransformer := m.MD()
+
+	maps.Copy(funcs, map[string]any{
+		"ParseMD": func(content []byte) (*struct {
+			Doc *ast.Document
+			TOC []TOCNode
+		}, error) {
+			doc := md.Parser().Parse(text.NewReader(content))
+			return &(struct {
+				Doc *ast.Document
+				TOC []TOCNode
+			}{
+				Doc: doc.(*ast.Document),
+				TOC: tocTransformer.TOC,
+			}), nil
+		},
+		"MDToHtml": func(doc *ast.Document) (htmpl.HTML, error) {
+			var b bytes.Buffer
+			err = md.Renderer().Render(&b, finalmd, doc)
+			return htmpl.HTML(b.String()), err
+		},
+	})
+
+	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, funcs)
+	if err != nil {
+		log.Println("Error rendering template: ", outres.FullPath, template, err)
+		log.Println("Contents: ", string(tmpl[0].RawSource))
+		_, err = outfile.Write(fmt.Appendf(nil, "MD Template error: %s", err.Error()))
+	}
+	return panicOrError(err)
+}
+
 func (m *MDToHtml) LoadResource(site *Site, r *Resource) error {
 	// Other basic book keeping
 	base := filepath.Base(r.FullPath)
@@ -123,89 +194,4 @@ func (m *MDToHtml) LoadResourceTemplate(site *Site, r *Resource) ([]byte, error)
 	}
 
 	return finalmd.Bytes(), nil
-}
-
-// Generate the output resource for a related set of "input" targets
-func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource) error {
-	if len(inputs) != 1 || len(targets) != 1 {
-		// This rule can only match 1 input to one output
-		panic(fmt.Errorf("Exactly 1 input and output needed, found %d, %d", len(inputs), len(targets)))
-	}
-
-	inres := inputs[0]
-	template, err := m.getResourceTemplate(inres)
-	if err != nil {
-		return err
-	}
-
-	outres := targets[0]
-	outres.EnsureDir()
-	outfile, err := os.Create(outres.FullPath)
-	if err != nil {
-		log.Println("Error writing to: ", outres.FullPath, err)
-		return err
-	}
-	defer outfile.Close()
-
-	tmpl, err := outres.Site.Templates.Loader.Load(template.Name, "")
-	if err != nil {
-		panic(err)
-		// return err
-	}
-
-	finalmd, err := m.LoadResourceTemplate(site, inres)
-
-	params := map[any]any{
-		"Site":        site,
-		"Res":         inres,
-		"FrontMatter": inres.FrontMatter().Data,
-		"Content":     finalmd,
-	}
-	if template.Params != nil {
-		maps.Copy(params, template.Params)
-	}
-
-	localData := map[string]any{}
-
-	md, tocTransformer := m.MD()
-	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, map[string]any{
-		"StageSet": func(key string, value any, kvpairs ...any) any {
-			for i := -2; i < len(kvpairs); i += 2 {
-				if i >= 0 {
-					key = kvpairs[i].(string)
-					value = kvpairs[i+1]
-				}
-				localData[key] = value
-			}
-			return ""
-		},
-		"StageGet": func(key string) any {
-			return localData[key]
-		},
-		"ParseMD": func(content []byte) (*struct {
-			Doc *ast.Document
-			TOC []TOCNode
-		}, error) {
-			doc := md.Parser().Parse(text.NewReader(content))
-			return &(struct {
-				Doc *ast.Document
-				TOC []TOCNode
-			}{
-				Doc: doc.(*ast.Document),
-				TOC: tocTransformer.TOC,
-			}), nil
-		},
-		"MDToHtml": func(doc *ast.Document) (htmpl.HTML, error) {
-			var b bytes.Buffer
-			err = md.Renderer().Render(&b, finalmd, doc)
-			return htmpl.HTML(b.String()), err
-		},
-	})
-	if err != nil {
-		log.Println("Template: ", template)
-		log.Println("Error rendering template: ", outres.FullPath, template, err)
-		log.Println("Contents: ", string(tmpl[0].RawSource))
-		_, err = outfile.Write(fmt.Appendf(nil, "Template error: %s", err.Error()))
-	}
-	return err
 }

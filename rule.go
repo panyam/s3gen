@@ -6,6 +6,19 @@ import (
 	"strings"
 )
 
+// BaseTemplates are data used to render a page.  Typically this needs the name of the template
+// being rendered and the (possibly nested) parameters need by that specific template.
+type BaseTemplate struct {
+	// Name of the Template file that is to be used as the root
+	Name string
+
+	// Name of the template within the template file for the entry point (given a
+	// template file may contain multiple templates)
+	Entry string
+
+	Params map[any]any
+}
+
 // We are switching to a rule based build system.
 // Problem with a Resource having a loader and its output resource having a "renderer" is the model doesnt quite make
 // sense.  The renderer should be on the input resource and the output is just an artifact.  And a renderer really
@@ -38,7 +51,7 @@ type Rule interface {
 	TargetsFor(site *Site, res *Resource) (siblings []*Resource, targets []*Resource)
 
 	// Generate the output resource for a related set of "input" targets
-	Run(site *Site, inputs []*Resource, targets []*Resource) error
+	Run(site *Site, inputs []*Resource, targets []*Resource, funcs map[string]any) error
 }
 
 type BaseToHtmlRule struct {
