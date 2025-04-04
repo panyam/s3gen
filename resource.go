@@ -129,6 +129,7 @@ type Resource struct {
 
 	// This will be set by the parser
 	frontMatter FrontMatter
+	Metadata    map[string]any
 	Document    Document
 
 	// The resource this is derived/copied/rendered from. This will only be set for output resources
@@ -173,10 +174,26 @@ func (r *Resource) Reset() {
 	r.State = ResourceStatePending
 	r.info = nil
 	r.Error = nil
+	r.Metadata = map[string]any{}
 	r.frontMatter.Loaded = false
 	r.Document.Loaded = false
 	r.Base = nil
 	r.ParamValues = nil
+}
+
+func (r *Resource) SetMetadata(key string, value any, kvpairs ...any) any {
+	// log.Printf("Settin Key %s in resource %s", key, res.FullPath)
+	if r.Metadata == nil {
+		r.Metadata = map[string]any{}
+	}
+	r.Metadata[key] = value
+	for i := 0; i < len(kvpairs); i += 2 {
+		key = kvpairs[i].(string)
+		value = kvpairs[i+1]
+		r.Metadata[key] = value
+		// log.Printf("Settin Key %s in resource %s", key, res.FullPath)
+	}
+	return ""
 }
 
 // Ensures that a resource's parent directory exists

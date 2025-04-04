@@ -96,7 +96,6 @@ func (m *BaseToHtmlRule) TargetsFor(s *Site, r *Resource) (siblings []*Resource,
 		return nil, nil
 	}
 
-	log.Println("Ext: ", r.Ext())
 	isValidExt := false
 	for _, ext := range m.Extensions {
 		if r.Ext() == ext {

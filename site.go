@@ -310,7 +310,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 
 			// And run the rule
 			allres := append(siblings, res)
-			if err := rule.Run(s, allres, targets, stageFuncs()); err != nil {
+			if err := rule.Run(s, allres, targets, stageFuncs(res)); err != nil {
 				log.Println("Error generating targest for res: ", res.FullPath, err)
 			}
 		}
@@ -335,7 +335,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 
 				// Dont add the rule for this resource
 				allres := append(siblings, res)
-				if err := rule.Run(s, allres, targets, stageFuncs()); err != nil {
+				if err := rule.Run(s, allres, targets, stageFuncs(res)); err != nil {
 					log.Println("Error generating targest for res: ", res.FullPath, err)
 				}
 			} else {
@@ -384,20 +384,22 @@ func (s *Site) resourceMatchedARule(res *Resource) bool {
 	return true
 }
 
-func stageFuncs() map[string]any {
-	localData := map[string]any{}
+func stageFuncs(res *Resource) map[string]any {
+	localData := make(map[string]any)
 	return map[string]any{
 		"StageSet": func(key string, value any, kvpairs ...any) any {
-			for i := -2; i < len(kvpairs); i += 2 {
-				if i >= 0 {
-					key = kvpairs[i].(string)
-					value = kvpairs[i+1]
-				}
+			// log.Printf("Settin Key %s in resource %s", key, res.FullPath)
+			localData[key] = value
+			for i := 0; i < len(kvpairs); i += 2 {
+				key = kvpairs[i].(string)
+				value = kvpairs[i+1]
 				localData[key] = value
+				// log.Printf("Settin Key %s in resource %s", key, res.FullPath)
 			}
 			return ""
 		},
 		"StageGet": func(key string) any {
+			// log.Printf("Gettin Key %s in resource %s", key, res.FullPath)
 			return localData[key]
 		},
 	}

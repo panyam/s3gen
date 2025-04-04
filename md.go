@@ -23,14 +23,6 @@ import (
 	"go.abhg.dev/goldmark/anchor"
 )
 
-/*
-	doc := md.Parser().Parse(text.NewReader(finalmd.Bytes()))
-	r.Document.Loaded = true
-	r.Document.LoadedAt = time.Now()
-	r.Document.SetMetadata("TOC", tocTransformer.TOC)
-	r.Document.Root = doc
-*/
-
 // A rule that converts <ContentRoot>/a/b/c.md -> <OutputDir>/a/b/c/index.html
 // by Applying the root template defined in c.md as is
 type MDToHtml struct {
@@ -117,12 +109,41 @@ func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, func
 	}
 
 	md, tocTransformer := m.MD()
+	/*
+		localData := make(map[string]any)
+		funcs = map[string]any{
+			"StageSet": func(key string, value any, kvpairs ...any) any {
+				localData[key] = value
+				for i := 0; i < len(kvpairs); i += 2 {
+					key = kvpairs[i].(string)
+					value = kvpairs[i+1]
+					localData[key] = value
+				}
+				return ""
+			},
+			"StageGet": func(key string) any {
+				return localData[key]
+			},
+		}
+	*/
 
+	if funcs == nil {
+		funcs = map[string]any{}
+	}
 	maps.Copy(funcs, map[string]any{
+		"OurContent": func() string {
+			log.Println("Calling OurContent: ", len(finalmd), inres.FullPath)
+			return string(finalmd)
+		},
 		"ParseMD": func(content []byte) (*struct {
 			Doc *ast.Document
 			TOC []TOCNode
 		}, error) {
+			// log.Println("Parsing Content: ", inres.FullPath, "ContentLen: ", len(content), "MDLen: ", len(finalmd))
+			// log.Println(string(content))
+			if len(content) != len(finalmd) {
+				panic("Content and MD len do not match")
+			}
 			doc := md.Parser().Parse(text.NewReader(content))
 			return &(struct {
 				Doc *ast.Document
@@ -134,13 +155,22 @@ func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, func
 		},
 		"MDToHtml": func(doc *ast.Document) (htmpl.HTML, error) {
 			var b bytes.Buffer
-			err = md.Renderer().Render(&b, finalmd, doc)
+			// log.Println("2222.... Did we come here???", len(finalmd))
+			// log.Println("Rendering with Template", "inres", inres.FullPath, "outres", "template", template.Name, "entry", template.Entry)
+			// log.Println("Rendering Content: ", len(finalmd))
+			err := md.Renderer().Render(&b, finalmd, doc)
+			if err != nil {
+				log.Println("Did we come here???")
+				panic(err)
+			}
 			return htmpl.HTML(b.String()), err
 		},
 	})
 
+	// log.Println("1111 ---- Rendering with Template", "outres", outres.FullPath, "template", template.Name, "entry", template.Entry)
 	slog.Debug("Rendering with Template", "inres", inres.FullPath, "template", template.Name, "entry", template.Entry)
 	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, funcs)
+	// log.Println("Finished Rendering, err: ", err)
 	if err != nil {
 		log.Println("Error rendering template: ", outres.FullPath, template, err)
 		log.Println("Contents: ", string(tmpl[0].RawSource))
@@ -183,9 +213,9 @@ func (m *MDToHtml) LoadResourceTemplate(site *Site, r *Resource) ([]byte, error)
 	}
 
 	params := map[any]any{
-		"Res":  r,
-		"Site": r.Site,
-		// "FrontMatter": res.FrontMatter().Data,
+		"Res":         r,
+		"Site":        r.Site,
+		"FrontMatter": r.FrontMatter().Data,
 	}
 
 	finalmd := bytes.NewBufferString("")
@@ -197,3 +227,8 @@ func (m *MDToHtml) LoadResourceTemplate(site *Site, r *Resource) ([]byte, error)
 
 	return finalmd.Bytes(), nil
 }
+
+// A few helper functions per resource
+
+// func (m *MDToHtml) Funcs(md goldmark.Markdown, inres *Resource, finalmd []byte, tocTransformer *TOCTransformer, template BaseTemplate) map[string]any { return
+// }

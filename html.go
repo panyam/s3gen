@@ -1,6 +1,7 @@
 package s3gen
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"log/slog"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	gotl "github.com/panyam/templar"
 )
 
 // A rule that converts <ContentRoot>/a/b/c.md -> <OutputDir>/a/b/c/index.html
@@ -49,18 +52,34 @@ func (m *HTMLToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, fu
 	}
 	defer outfile.Close()
 
+	finalmd, err := m.LoadResourceTemplate(site, inres)
+
 	params := map[any]any{
 		"Site":        site,
 		"Res":         inres,
 		"FrontMatter": inres.FrontMatter().Data,
-		"Content":     inres.Document.Root,
+		"Content":     finalmd,
 	}
 	if template.Params != nil {
 		maps.Copy(params, template.Params)
 	}
+	if funcs == nil {
+		funcs = map[string]any{}
+	}
+	maps.Copy(funcs, map[string]any{
+		"OurContent": func() string {
+			finalmd := tmpl[0].RawSource
+			log.Println("Calling OurContent: ", len(finalmd), inres.FullPath)
+			return string(finalmd)
+		},
+		"MDToHtml": func(input any) string {
+			return "TBD"
+		},
+	})
 
+	log.Println("1111 ---- Rendering HTML with Template", "outres", outres.FullPath, "template", template.Name, "entry", template.Entry)
 	slog.Debug("Rendering with Template", "inres", inres.FullPath, "template", template.Name, "entry", template.Entry)
-	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, nil)
+	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, funcs)
 	if err != nil {
 		log.Println("Error rendering template: ", outres.FullPath, template, err)
 		log.Println("Contents: ", string(tmpl[0].RawSource))
@@ -82,4 +101,38 @@ func (h *HTMLToHtml) LoadResource(site *Site, r *Resource) error {
 	r.Site.CreateResourceBase(r)
 
 	return nil
+}
+
+func (h *HTMLToHtml) LoadResourceTemplate(site *Site, r *Resource) ([]byte, error) {
+	r.FrontMatter()
+	if r.Error != nil {
+		return nil, r.Error
+	}
+
+	// Load the rest of the content so we can parse it
+	source, err := r.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	template := &gotl.Template{
+		RawSource: source,
+		Path:      r.FullPath,
+		AsHtml:    true,
+	}
+
+	params := map[any]any{
+		"Res":         r,
+		"Site":        r.Site,
+		"FrontMatter": r.FrontMatter().Data,
+	}
+
+	finalmd := bytes.NewBufferString("")
+	err = r.Site.Templates.RenderHtmlTemplate(finalmd, template, "", params, nil)
+	if err != nil {
+		log.Println("Error loading template content: ", err, r.FullPath)
+		return nil, err
+	}
+
+	return finalmd.Bytes(), nil
 }
