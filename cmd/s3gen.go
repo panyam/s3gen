@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/felixge/httpsnoop"
-	"github.com/gorilla/mux"
 	"github.com/panyam/s3gen"
 )
 
@@ -30,11 +29,11 @@ func main() {
 		site.Watch()
 		// Attach our site to be at /`PathPrefix`
 		// The site will also take care of serving static files from /`PathPrefix`/static paths
-		router := mux.NewRouter()
-		router.PathPrefix(site.PathPrefix).Handler(http.StripPrefix(site.PathPrefix, &site))
+		mux := http.NewServeMux()
+		mux.Handle("/", &site)
 
 		srv := &http.Server{
-			Handler: withLogger(router),
+			Handler: withLogger(mux),
 			Addr:    *serve_addr,
 			// Good practice: enforce timeouts for servers you create!
 			// WriteTimeout: 15 * time.Second,

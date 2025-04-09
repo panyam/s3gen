@@ -7,7 +7,6 @@ toolchain go1.24.0
 require (
 	github.com/adrg/frontmatter v0.2.0
 	github.com/felixge/httpsnoop v1.0.4
-	github.com/gorilla/mux v1.8.1
 	github.com/morrisxyang/xreflect v0.0.0-20231001053442-6df0df9858ba
 	github.com/panyam/goutils v0.1.2
 	github.com/panyam/templar v0.0.3

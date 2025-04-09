@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
 	gut "github.com/panyam/goutils/utils"
 	gotl "github.com/panyam/templar"
 	"github.com/radovskyb/watcher"
@@ -80,7 +79,7 @@ type Site struct {
 	BuildFrequency time.Duration
 
 	// All files including published files will be served from here!
-	filesRouter *mux.Router
+	mux *http.ServeMux
 
 	// This router wraps "published" files to ensure that when source
 	// files have changed - it recompiles them before calling the underlying
@@ -148,42 +147,25 @@ func (s *Site) HandleStatic(path, folder string) *Site {
 }
 
 // Returns a Router instance that can serve this as a site under a larger prefix.
-func (s *Site) GetRouter() *mux.Router {
-	if !s.initialized {
-		s.Init()
-	}
-	if s.filesRouter == nil {
-		s.filesRouter = mux.NewRouter()
+func (s *Site) Handler() http.Handler {
+	if s.mux == nil {
+		s.mux = http.NewServeMux()
+		log.Println("2. Here??????")
 
 		// Setup local/static paths
 		for i := 0; i < len(s.StaticFolders); i += 2 {
 			path, folder := s.StaticFolders[i], s.StaticFolders[i+1]
 			log.Printf("Adding static route: %s -> %s", path, folder)
-			s.filesRouter.PathPrefix(path).Handler(
-				http.StripPrefix(path, http.FileServer(http.Dir(folder))))
+			s.mux.Handle(path, http.StripPrefix(path, http.FileServer(http.Dir(folder))))
+			// s.filesRouter.PathPrefix(path).Handler(http.StripPrefix(path, http.FileServer(http.Dir(folder))))
 		}
 
 		// Serve everything else from the
 
 		// Now add the file loader/handler for the "published" dir
-		fileServer := http.FileServer(http.Dir(s.OutputDir))
-		realHandler := http.StripPrefix("/", fileServer)
-		if s.LazyLoad {
-			x := s.filesRouter.PathPrefix("/")
-			x.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				log.Println("Ensuring path is built: ", r.URL.Path, "Site Prefix: ", s.PathPrefix)
-
-				// srcRes := s.urlPathToFilePath(r.URL.Path)
-				// log.Println("Source Resource: ", srcRes)
-				// What should happen here?
-				realHandler.ServeHTTP(w, r)
-			}))
-		} else {
-			x := s.filesRouter.PathPrefix("/")
-			x.Handler(realHandler)
-		}
+		s.mux.Handle("/", http.FileServer(http.Dir(s.OutputDir)))
 	}
-	return s.filesRouter
+	return s.mux
 }
 
 // The base entry point for a serving a site with our customer handler -
@@ -192,7 +174,7 @@ func (s *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The entry point router for our site
 	// parts := strings.Split(r.URL.Path, "/")[1:]
 	// log.Println("1112 - URL Parts: ", parts)
-	s.GetRouter().ServeHTTP(w, r)
+	s.Handler().ServeHTTP(w, r)
 }
 
 // A method to list all the resource in our site in the content root.  This method also allows pagination, filtering and sorting of resources.
