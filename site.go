@@ -150,7 +150,6 @@ func (s *Site) HandleStatic(path, folder string) *Site {
 func (s *Site) Handler() http.Handler {
 	if s.mux == nil {
 		s.mux = http.NewServeMux()
-		log.Println("2. Here??????")
 
 		// Setup local/static paths
 		for i := 0; i < len(s.StaticFolders); i += 2 {
@@ -200,8 +199,10 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 			return nil
 		}
 
-		if filterFunc == nil && s.IgnoreFileFunc != nil && s.IgnoreFileFunc(fullpath) {
-			return nil
+		if filterFunc == nil && s.IgnoreFileFunc != nil {
+			if s.IgnoreFileFunc(fullpath) {
+				return nil
+			}
 		}
 
 		// map fullpath to a resource here
@@ -213,6 +214,8 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 
 		return nil
 	})
+
+	log.Println("Found: ", foundResources, offset, count)
 	if sortFunc != nil {
 		sort.Slice(foundResources, func(idx1, idx2 int) bool {
 			ent1 := foundResources[idx1]
@@ -269,9 +272,6 @@ func (s *Site) Rebuild(rs []*Resource) {
 	}
 
 	for _, res := range rs {
-		if false && res.FullPath != "/Users/sri/personal/golang/leetcoach/content/casestudies/bitly/index.md" {
-			continue
-		}
 		for _, rule := range s.BuildRules {
 			if s.resourceMatchedByRule(res, rule) {
 				// this rule has already matched this resource and will be processed
@@ -301,9 +301,6 @@ func (s *Site) Rebuild(rs []*Resource) {
 	// Now go through all resources that did NOT match any rules and pass them through the default rule - which is
 	// activated when no other rules match
 	for _, res := range rs {
-		if res.Ext() == ".md" || res.Ext() == ".html" {
-			continue
-		}
 		if !s.resourceMatchedARule(res) {
 			// log.Println("Default Matching: ", res.FullPath)
 			// apply the default rule on this
