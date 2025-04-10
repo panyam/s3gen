@@ -64,6 +64,8 @@ type Site struct {
 	// are to be ignored.
 	IgnoreFileFunc func(filepath string) bool
 
+	PriorityFunc func(res *Resource) int
+
 	// Whether to enable live reload/rebuild of changed files or not
 	LiveReload bool
 	LazyLoad   bool
@@ -101,6 +103,24 @@ func (s *Site) Init() *Site {
 		s.BuildRules = []Rule{
 			&MDToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".md", ".mdx"}}},
 			&HTMLToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".htm", ".html"}}},
+		}
+	}
+	if s.PriorityFunc == nil {
+		// use a default
+		s.PriorityFunc = func(r *Resource) int {
+			base := filepath.Base(r.FullPath)
+			if base[0] == '[' && base[len(base)-1] == ']' {
+				// parametric pages
+				return 10000
+			}
+			if strings.HasPrefix(base, "index") || strings.HasPrefix(base, "_index") {
+				// index pages
+				return 5000
+			}
+			if strings.HasSuffix(base, ".md") || strings.HasSuffix(base, ".mdx") || strings.HasSuffix(base, ".html") || strings.HasSuffix(base, ".htm") {
+				return 1000
+			}
+			return 0
 		}
 	}
 	if s.Templates == nil {
@@ -269,6 +289,14 @@ func (s *Site) Rebuild(rs []*Resource) {
 	}
 	if rs == nil {
 		rs = s.ListResources(nil, nil, 0, 0)
+	}
+
+	if s.PriorityFunc != nil {
+		sort.Slice(rs, func(idx1, idx2 int) bool {
+			ent1 := rs[idx1]
+			ent2 := rs[idx2]
+			return s.PriorityFunc(ent1) < s.PriorityFunc(ent2)
+		})
 	}
 
 	for _, res := range rs {
