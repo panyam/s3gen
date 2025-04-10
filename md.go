@@ -27,7 +27,6 @@ import (
 // by Applying the root template defined in c.md as is
 type MDToHtml struct {
 	BaseToHtmlRule
-	DefaultBaseTemplate string
 }
 
 func (m *MDToHtml) MD() (md goldmark.Markdown, tocTransformer *TOCTransformer) {
@@ -109,23 +108,6 @@ func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, func
 	}
 
 	md, tocTransformer := m.MD()
-	/*
-		localData := make(map[string]any)
-		funcs = map[string]any{
-			"StageSet": func(key string, value any, kvpairs ...any) any {
-				localData[key] = value
-				for i := 0; i < len(kvpairs); i += 2 {
-					key = kvpairs[i].(string)
-					value = kvpairs[i+1]
-					localData[key] = value
-				}
-				return ""
-			},
-			"StageGet": func(key string) any {
-				return localData[key]
-			},
-		}
-	*/
 
 	if funcs == nil {
 		funcs = map[string]any{}
@@ -167,7 +149,8 @@ func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, func
 		},
 	})
 
-	// log.Println("1111 ---- Rendering with Template", "outres", outres.FullPath, "template", template.Name, "entry", template.Entry)
+	// log.Println("1111 ---- Rendering with MD Template", "outres", outres.FullPath, "template", template.Name, "entry", template.Entry)
+	// log.Println("3333 ---- Rendering with MD Template", "outres", outres.FullPath, "template", template.Name, "entry", template.Entry)
 	slog.Debug("Rendering with Template", "inres", inres.FullPath, "template", template.Name, "entry", template.Entry)
 	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, funcs)
 	// log.Println("Finished Rendering, err: ", err)

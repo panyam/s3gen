@@ -17,7 +17,6 @@ import (
 // by Applying the root template defined in c.md as is
 type HTMLToHtml struct {
 	BaseToHtmlRule
-	DefaultBaseTemplate string
 }
 
 func (h *HTMLToHtml) TargetsFor(s *Site, r *Resource) (siblings []*Resource, targets []*Resource) {
@@ -77,7 +76,7 @@ func (m *HTMLToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, fu
 		},
 	})
 
-	log.Println("1111 ---- Rendering HTML with Template", "outres", outres.FullPath, "template", template.Name, "entry", template.Entry)
+	// log.Println("1111 ---- Rendering HTML with Template", "outres", outres.FullPath, "template", template.Name, "entry", template.Entry)
 	slog.Debug("Rendering with Template", "inres", inres.FullPath, "template", template.Name, "entry", template.Entry)
 	err = outres.Site.Templates.RenderHtmlTemplate(outfile, tmpl[0], template.Entry, params, funcs)
 	if err != nil {
