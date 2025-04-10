@@ -235,7 +235,6 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 		return nil
 	})
 
-	log.Println("Found: ", foundResources, offset, count)
 	if sortFunc != nil {
 		sort.Slice(foundResources, func(idx1, idx2 int) bool {
 			ent1 := foundResources[idx1]
