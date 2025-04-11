@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	gfn "github.com/panyam/goutils/fn"
+	gotl "github.com/panyam/goutils/template"
 	gut "github.com/panyam/goutils/utils"
-	gotl "github.com/panyam/templar"
 )
 
 // A few template functions attached to the site itself

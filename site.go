@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
+	gotl "github.com/panyam/goutils/template"
 	gut "github.com/panyam/goutils/utils"
-	gotl "github.com/panyam/templar"
+	tmplr "github.com/panyam/templar"
 	"github.com/radovskyb/watcher"
 )
 
@@ -22,12 +23,12 @@ import (
 // to build and serve a static site.  This Site object also provides a http.HandlerFunc which can
 // be used to server it via a http.Server.
 type Site struct {
-	Templates *gotl.TemplateGroup
+	Templates *tmplr.TemplateGroup
 
 	// Where our templates and loaders are
 	CommonFuncMap   map[string]any
 	TemplateFolders []string
-	LoaderList      *gotl.LoaderList
+	LoaderList      *tmplr.LoaderList
 
 	// ContentRoot is the root of all your pages.
 	// One structure we want to place is use folders to emphasis url structure too
@@ -124,10 +125,10 @@ func (s *Site) Init() *Site {
 		}
 	}
 	if s.Templates == nil {
-		s.Templates = gotl.NewTemplateGroup()
-		s.LoaderList = &gotl.LoaderList{}
+		s.Templates = tmplr.NewTemplateGroup()
+		s.LoaderList = &tmplr.LoaderList{}
 		// Default loader is for templates
-		s.LoaderList.DefaultLoader = gotl.NewFileSystemLoader(s.TemplateFolders...)
+		s.LoaderList.DefaultLoader = tmplr.NewFileSystemLoader(s.TemplateFolders...)
 		// s.LoaderList.AddLoader(&ContentLoader{s.ContentRoot})
 		s.Templates.Loader = s.LoaderList
 		s.Templates.AddFuncs(gotl.DefaultFuncMap())
