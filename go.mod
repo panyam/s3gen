@@ -9,7 +9,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4
 	github.com/morrisxyang/xreflect v0.0.0-20231001053442-6df0df9858ba
 	github.com/panyam/goutils v0.1.3
-	github.com/panyam/templar v0.0.7
+	github.com/panyam/templar v0.0.13
 	github.com/radovskyb/watcher v1.0.7
 	github.com/yuin/goldmark v1.7.8
 	github.com/yuin/goldmark-highlighting v0.0.0-20220208100518-594be1970594
@@ -23,4 +23,4 @@ require (
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 )
 
-replace github.com/panyam/templar v0.0.7 => ../templar/
+// replace github.com/panyam/templar v0.0.7 => ../templar/
