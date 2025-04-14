@@ -309,7 +309,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 
 			// now see if this rule can process this rule
 			siblings, targets := rule.TargetsFor(s, res)
-			if targets == nil {
+			if len(targets) == 0 {
 				// rule cannot do anything with it
 				continue
 			}

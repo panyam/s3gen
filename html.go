@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"maps"
 	"os"
-	"path/filepath"
-	"strings"
 
 	gotl "github.com/panyam/templar"
 )
@@ -43,6 +41,7 @@ func (m *HTMLToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, fu
 	}
 
 	outres := targets[0]
+	log.Println("Ensuring HTML Dir: ", outres.FullPath)
 	outres.EnsureDir()
 	outfile, err := os.Create(outres.FullPath)
 	if err != nil {
@@ -85,21 +84,6 @@ func (m *HTMLToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, fu
 		_, err = outfile.Write(fmt.Appendf(nil, "HTML Template error: %s", err.Error()))
 	}
 	return panicOrError(err)
-}
-
-func (h *HTMLToHtml) LoadResource(site *Site, r *Resource) error {
-	// Other basic book keeping
-	base := filepath.Base(r.FullPath)
-	r.IsIndex = base == "index.md" || base == "_index.md" || base == "index.mdx" || base == "_index.mdx"
-	r.NeedsIndex = strings.HasSuffix(r.FullPath, ".md") || strings.HasSuffix(r.FullPath, ".mdx")
-
-	base = filepath.Base(r.WithoutExt(true))
-	r.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
-
-	// TODO - this needs to go - nothing magical about "Page"
-	r.Site.CreateResourceBase(r)
-
-	return nil
 }
 
 func (h *HTMLToHtml) LoadResourceTemplate(site *Site, r *Resource) ([]byte, error) {

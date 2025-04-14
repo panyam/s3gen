@@ -107,6 +107,7 @@ func (m *BaseToHtmlRule) TargetsFor(s *Site, r *Resource) (siblings []*Resource,
 		return
 	}
 
+	log.Println("isValid, Res, Extensions, isParametric, isIndex, needsIndex: ", isValidExt, r.FullPath, m.Extensions, r.IsParametric, r.IsIndex, r.NeedsIndex)
 	if r.IsParametric {
 		ext := filepath.Ext(respath)
 
@@ -156,4 +157,38 @@ func (m *BaseToHtmlRule) TargetsFor(s *Site, r *Resource) (siblings []*Resource,
 		targets = append(targets, destres)
 	}
 	return
+}
+
+func (h *BaseToHtmlRule) LoadResource(site *Site, r *Resource) error {
+	// Other basic book keeping
+	base := filepath.Base(r.FullPath)
+
+	// check if it is an index page
+	for _, ext := range h.Extensions {
+		if r.IsIndex {
+			break
+		}
+		for _, prefix := range []string{"index", "_index", "Index"} {
+			if base == prefix+ext {
+				r.IsIndex = true
+				break
+			}
+		}
+	}
+
+	// check if it needs an index page - should this be only if we are NOT an index page?
+	for _, ext := range h.Extensions {
+		if r.Ext() == ext {
+			r.NeedsIndex = true
+			break
+		}
+	}
+
+	base = filepath.Base(r.WithoutExt(true))
+	r.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
+
+	// TODO - this needs to go - nothing magical about "Page"
+	r.Site.CreateResourceBase(r)
+
+	return nil
 }
