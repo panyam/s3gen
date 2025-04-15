@@ -85,7 +85,6 @@ func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, func
 	}
 
 	outres := targets[0]
-	log.Println("Ensuring MD Dir: ", outres.FullPath)
 	outres.EnsureDir()
 	outfile, err := os.Create(outres.FullPath)
 	if err != nil {

@@ -41,7 +41,6 @@ func (m *HTMLToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, fu
 	}
 
 	outres := targets[0]
-	log.Println("Ensuring HTML Dir: ", outres.FullPath)
 	outres.EnsureDir()
 	outfile, err := os.Create(outres.FullPath)
 	if err != nil {

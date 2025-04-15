@@ -107,7 +107,7 @@ func (m *BaseToHtmlRule) TargetsFor(s *Site, r *Resource) (siblings []*Resource,
 		return
 	}
 
-	log.Println("isValid, Res, Extensions, isParametric, isIndex, needsIndex: ", isValidExt, r.FullPath, m.Extensions, r.IsParametric, r.IsIndex, r.NeedsIndex)
+	// log.Println("isValid, Res, Extensions, isParametric, isIndex, needsIndex: ", isValidExt, r.FullPath, m.Extensions, r.IsParametric, r.IsIndex, r.NeedsIndex)
 	if r.IsParametric {
 		ext := filepath.Ext(respath)
 
