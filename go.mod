@@ -6,10 +6,9 @@ toolchain go1.24.0
 
 require (
 	github.com/adrg/frontmatter v0.2.0
-	github.com/felixge/httpsnoop v1.0.4
 	github.com/morrisxyang/xreflect v0.0.0-20231001053442-6df0df9858ba
 	github.com/panyam/goutils v0.1.3
-	github.com/panyam/templar v0.0.15
+	github.com/panyam/templar v0.0.18
 	github.com/radovskyb/watcher v1.0.7
 	github.com/yuin/goldmark v1.7.8
 	github.com/yuin/goldmark-highlighting v0.0.0-20220208100518-594be1970594
