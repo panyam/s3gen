@@ -22,6 +22,42 @@ This is the content of my blog post.
 
 You can access this metadata in your templates using the `.FrontMatter` object. For example, to display the title of the page, you would use `{{ .FrontMatter.title }}`.
 
+## Specifying a Page Template
+
+One of the most powerful features of the front matter is the `template` key. This allows you to specify which top-level template file from your `templates` directory should be used to render the content.
+
+This gives you the flexibility to create different layouts for different types of content. For example, a blog post might use a different base template than a project page or the homepage.
+
+**Example:**
+
+Imagine you have two main layouts in your `templates` directory: `BlogPage.html` and `ProjectPage.html`.
+
+For a blog post, your front matter would look like this:
+
+```markdown
+---
+title: "My Blog Post"
+date: "2023-10-27"
+template: "BlogPage.html"
+---
+
+Blog post content here...
+```
+
+And for a project page, it would look like this:
+
+```markdown
+---
+title: "My Awesome Project"
+date: "2023-10-28"
+template: "ProjectPage.html"
+---
+
+Project page content here...
+```
+
+When `s3gen` builds the site, it will use the specified template as the entry point for rendering, allowing you to have completely different HTML structures, CSS, and JavaScript for each type of page. If no `template` is specified, `s3gen` will use the `DefaultBaseTemplate` defined in your `Site` configuration.
+
 ## Basic Pages
 
 A basic page is any content file that is not an index page or a parametric page. These are typically your blog posts, "about" pages, and other individual pieces of content.
