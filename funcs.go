@@ -14,8 +14,7 @@ import (
 	gut "github.com/panyam/goutils/utils"
 )
 
-// A few template functions attached to the site itself
-
+// DefaultFuncMap returns a map of the default template functions available in s3gen.
 func (s *Site) DefaultFuncMap() map[string]any {
 	return map[string]any{
 		"LeafPages":     s.LeafPages,
@@ -44,6 +43,8 @@ func (s *Site) DefaultFuncMap() map[string]any {
 	}
 }
 
+// LeafPages returns a list of "leaf" pages (i.e., pages that are not index pages).
+// It can be filtered by draft status and sorted by date or title.
 func (s *Site) LeafPages(hideDrafts bool, orderby string, offset, count any) (out []*Resource) {
 	var sortFunc ResourceSortFunc = nil
 	if orderby != "" {
@@ -93,6 +94,7 @@ func (s *Site) LeafPages(hideDrafts bool, orderby string, offset, count any) (ou
 		gotl.ToInt(count))
 }
 
+// GetPagesByTag returns a list of pages that have a specific tag.
 func (s *Site) GetPagesByTag(tag string, hideDrafts bool, desc bool, offset, count any) (out []*Resource) {
 	return s.ListResources(
 		func(res *Resource) bool {
@@ -138,6 +140,7 @@ func (s *Site) GetPagesByTag(tag string, hideDrafts bool, desc bool, offset, cou
 		gotl.ToInt(count))
 }
 
+// GetPagesByDate returns a list of pages, sorted by date.
 func (s *Site) GetPagesByDate(hideDrafts bool, desc bool, offset, count any) (out []*Resource) {
 	return s.ListResources(
 		func(res *Resource) bool {
@@ -172,6 +175,7 @@ func (s *Site) GetPagesByDate(hideDrafts bool, desc bool, offset, count any) (ou
 		gotl.ToInt(offset), gotl.ToInt(count))
 }
 
+// KeysForTagMap returns a sorted list of keys from a tag map.
 func (s *Site) KeysForTagMap(tagmap map[string]int, orderby string) []string {
 	out := gfn.MapKeys(tagmap)
 	sort.Slice(out, func(i1, i2 int) bool {
@@ -185,6 +189,7 @@ func (s *Site) KeysForTagMap(tagmap map[string]int, orderby string) []string {
 	return out
 }
 
+// GetAllTags returns a map of all tags and the number of pages that use them.
 func GetAllTags(resources []*Resource) (tagCount map[string]int) {
 	tagCount = make(map[string]int)
 	for _, res := range resources {
@@ -201,6 +206,7 @@ func GetAllTags(resources []*Resource) (tagCount map[string]int) {
 	return
 }
 
+// RenderTextTemplate renders a Go template as plain text.
 func (s *Site) RenderTextTemplate(templateFile, templateName string, params any) (out string, err error) {
 	writer := bytes.NewBufferString("")
 	tmpl, err := s.Templates.Loader.Load(templateFile, "")
@@ -216,6 +222,7 @@ func (s *Site) RenderTextTemplate(templateFile, templateName string, params any)
 	return
 }
 
+// RenderHtmlTemplate renders a Go template as HTML.
 func (s *Site) RenderHtmlTemplate(templateFile, templateName string, params any) (out template.HTML, err error) {
 	writer := bytes.NewBufferString("")
 	tmpl, err := s.Templates.Loader.Load(templateFile, "")
@@ -231,6 +238,7 @@ func (s *Site) RenderHtmlTemplate(templateFile, templateName string, params any)
 	return
 }
 
+// Json reads and parses a JSON file from the content directory.
 func (s *Site) Json(path string, fieldpath string) (any, error) {
 	if path[0] == '/' {
 		return nil, fmt.Errorf("Invalid json file: %s.  Cannot start with a /", path)

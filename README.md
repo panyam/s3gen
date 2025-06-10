@@ -23,7 +23,7 @@ S3Gen is a simple static site generator written in Go. It lets you do some frequ
 
 ## Examples
 
-[My Personal Blog](httpss://buildmage.com)
+[My Personal Blog](https://buildmage.com) - [Source](https://github.com/panyam/blog)
 
 ## Getting Started
 
@@ -113,7 +113,7 @@ go run main.go
 
 ## Where to Go Next
 
-For more detailed documentation, please see the `/docs` directory.
+For more detailed documentation, please see the `/docs`(https://github.com/panyam/s3gen/tree/main/docs) directory.
 
 ## Contributing & License
 

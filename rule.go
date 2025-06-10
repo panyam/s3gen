@@ -6,58 +6,44 @@ import (
 	"strings"
 )
 
-// BaseTemplates are data used to render a page.  Typically this needs the name of the template
-// being rendered and the (possibly nested) parameters need by that specific template.
+// BaseTemplate defines the data needed to render a page, including the
+// template name and any parameters it requires.
 type BaseTemplate struct {
-	// Name of the Template file that is to be used as the root
+	// Name is the name of the template file to use as the root.
 	Name string
 
-	// Name of the template within the template file for the entry point (given a
-	// template file may contain multiple templates)
+	// Entry is the name of the template to use as the entry point within the
+	// template file. This is useful when a single file contains multiple
+	// template definitions.
 	Entry string
 
+	// Params is a map of parameters to pass to the template.
 	Params map[any]any
 }
 
-// We are switching to a rule based build system.
-// Problem with a Resource having a loader and its output resource having a "renderer" is the model doesnt quite make
-// sense.  The renderer should be on the input resource and the output is just an artifact.  And a renderer really
-// depends not just on the output resource but on both input and output.  ie we have some kind of multi-arg dispatch
-// instead of based on a single entity (either in or out resource)
-//
-// A Rule based approach makes this simpler and more generic.
-//
-// In the case of a single .md file being rendered as a single .html file (eg /contentroot/a.md -> /output/a/index.html)
-// it is straightforward - load a.md, parse a.md, find a base template, render the parsed AST onto the output file.
-//
-// This is great for 1:1 files.  However any change in arity (in either side) breaks this.  Say we had:
-// 1. a "folder" with multiple parts, that forms a combined output file or
-// 2. a single .md file that is broken into multiple parts (each slides, or sections etc)
-// 3. or many to many - a bundle that generates another bundle.
-//
-// Here it is very hard to associate a rendered to any one of the resources.  Worse even the loader is not constant,
-// depending on the build action a different loader (eg parser) may be needed.
-//
-// So what we need is a way to associate resource to one or more build rules that can process the resources in generating
-// the right artificats.
-
+// Rule is an interface that defines how to process a resource. s3gen's build
+// system is based on a set of rules that are applied to resources in a specific
+// order. This allows for a flexible and extensible build process.
 type Rule interface {
-	// Given an input resource, finds all sibling and targets resources that will be affected by it For example if we have
-	// a directory with X files.  This can result in an output bundle of Y files/resources.   This method when given a
-	// file/res collects all "related" or "sibling" input resources needed to generate all targets that depend on them.
-	//
-	// This has a few benefits.   By grouping related/sibling resources, the site itself does not have revisit
-	// a sibling resource for the same rule (note a resource can be applied by multiple rules)
+	// TargetsFor determines if the rule can be applied to a given resource and,
+	// if so, what the output file (or "target") should be. It can also identify
+	// any "sibling" resources that are needed to process the input resource.
 	TargetsFor(site *Site, res *Resource) (siblings []*Resource, targets []*Resource)
 
-	// Generate the output resource for a related set of "input" targets
+	// Run contains the logic for processing the resource. It takes the input
+	// resources (the original resource and any siblings) and the target
+	// resources and generates the output.
 	Run(site *Site, inputs []*Resource, targets []*Resource, funcs map[string]any) error
 }
 
+// BaseToHtmlRule is a base rule that can be embedded in other rules that
+// convert a resource to HTML.
 type BaseToHtmlRule struct {
+	// Extensions is a list of file extensions that this rule can handle.
 	Extensions []string
 }
 
+// getResourceTemplate returns the template to use for a given resource.
 func (m *BaseToHtmlRule) getResourceTemplate(res *Resource) (template BaseTemplate, err error) {
 	frontMatter := res.FrontMatter().Data
 
@@ -83,12 +69,8 @@ func (m *BaseToHtmlRule) getResourceTemplate(res *Resource) (template BaseTempla
 	return
 }
 
-// Given an input resource, finds all sibling and targets resources that will be affected by it For example if we have
-// a directory with X files.  This can result in an output bundle of Y files/resources.   This method when given a
-// file/res collects all "related" or "sibling" input resources needed to generate all targets that depend on them.
-//
-// This has a few benefits.   By grouping related/sibling resources, the site itself does not have revisit
-// a sibling resource for the same rule (note a resource can be applied by multiple rules)
+// TargetsFor determines the output target for a resource that is being
+// converted to HTML.
 func (m *BaseToHtmlRule) TargetsFor(s *Site, r *Resource) (siblings []*Resource, targets []*Resource) {
 	respath, found := strings.CutPrefix(r.FullPath, s.ContentRoot)
 	if !found {
@@ -159,6 +141,8 @@ func (m *BaseToHtmlRule) TargetsFor(s *Site, r *Resource) (siblings []*Resource,
 	return
 }
 
+// LoadResource loads a resource and sets its basic properties, such as
+// whether it's an index page or a parametric page.
 func (h *BaseToHtmlRule) LoadResource(site *Site, r *Resource) error {
 	// Other basic book keeping
 	base := filepath.Base(r.FullPath)
