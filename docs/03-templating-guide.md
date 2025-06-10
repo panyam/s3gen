@@ -30,29 +30,119 @@ To include a template, use the `{{# include "..." #}}` syntax:
 {{# include "footer.html" #}}
 ```
 
-## Template Functions
+## Template Functions API
 
-`s3gen` provides a rich set of custom functions that you can use in your templates to access and manipulate your site's content. Here are some of the most common ones:
+`s3gen` provides a rich set of custom functions that you can use in your templates to access and manipulate your site's content.
 
-### Content Functions
+### `AllRes`
 
-*   `PagesByDate(hideDrafts bool, desc bool, offset int, count int) []*Resource`: Returns a list of pages, sorted by date.
-*   `PagesByTag(tag string, hideDrafts bool, desc bool, offset int, count int) []*Resource`: Returns a list of pages that have a specific tag.
-*   `LeafPages(hideDrafts bool, orderby string, offset int, count int) []*Resource`: Returns a list of "leaf" pages (i.e., pages that are not index pages).
-*   `AllTags(resources []*Resource) map[string]int`: Returns a map of all tags and the number of pages that use them.
-*   `json(path string, fieldpath string) (any, error)`: Reads and parses a JSON file from your `content` directory.
+Fetches all resources in the site, allowing you to perform site-wide operations.
 
-### Rendering Functions
+*   **Signature**: `AllRes() []*Resource`
+*   **Usage Example**: This is often used as a source for other functions, like `GetAllTags`.
 
-*   `MDToHtml(doc *ast.Document) (template.HTML, error)`: Converts a Markdown document to HTML.
-*   `RenderHtmlTemplate(templateFile, templateName string, params any) (template.HTML, error)`: Renders a Go template as HTML.
-*   `RenderTextTemplate(templateFile, templateName string, params any) (string, error)`: Renders a Go template as plain text.
+    ```html
+    {{/* Get all resources to pass to another function */}}
+    {{ $allPosts := (AllRes) }}
+    {{ $tagMap := (GetAllTags $allPosts) }}
+    ```
 
-### Utility Functions
+### `PagesByDate`
 
-*   `KeysForTagMap(tagmap map[string]int, orderby string) []string`: Returns a sorted list of keys from a tag map.
-*   `Slugify(text string) string`: Converts a string into a URL-friendly slug.
-*   `JoinA(sep string, a []any) string`: Joins a slice of any type into a string.
+Fetches a list of all content resources, sorted by their `date` front matter field. This is the most common function for creating a blog index or a list of recent articles.
+
+*   **Signature**: `PagesByDate(hideDrafts bool, descending bool, offset int, count int) []*Resource`
+*   **Usage Example**: Displaying the 5 most recent posts.
+
+    ```html
+    <h2>Latest Posts</h2>
+    <ul>
+      {{/* Get the 5 most recent posts, ignoring drafts */}}
+      {{ $latestPosts := (PagesByDate true true 0 5) }}
+      {{ range $latestPosts }}
+        <li>
+          <a href="{{ .Base.Link }}">
+            {{ .Base.Title }}
+          </a>
+          - <span>{{ .Base.CreatedAt.Format "Jan 2, 2006" }}</span>
+        </li>
+      {{ else }}
+        <p>No posts found!</p>
+      {{ end }}
+    </ul>
+    ```
+
+### `LeafPages`
+
+Fetches a list of "leaf" pages, which are pages that are not index or list pages themselves. This is useful for getting a collection of all your individual articles or posts.
+
+*   **Signature**: `LeafPages(hideDrafts bool, orderby string, offset int, count int) []*Resource`
+*   **Usage Example**: Creating a simple list of all articles, sorted by title.
+    ```html
+    <h1>All Articles</h1>
+    <ul>
+        {{ $allArticles := (LeafPages true "title" 0 -1) }}
+        {{ range $allArticles }}
+            <li><a href="{{ .Base.Link }}">{{ .Base.Title }}</a></li>
+        {{ end }}
+    </ul>
+    ```
+
+### `GetAllTags` and `PagesByTag`
+
+These two functions work together to create tag-based navigation. `GetAllTags` collects all unique tags from a set of resources, and `PagesByTag` fetches all pages for a single tag.
+
+*   **`GetAllTags` Signature**: `GetAllTags(resources []*Resource) map[string]int`
+*   **`PagesByTag` Signature**: `PagesByTag(tag string, hideDrafts bool, descending bool, offset int, count int) []*Resource`
+*   **Usage Example**:
+    1.  Create a main `tags.html` page to display a tag cloud:
+
+        ```html
+        <h1>All Tags</h1>
+        {{ $allPosts := (AllRes) }}
+        {{ $tagMap := (GetAllTags $allPosts) }}
+        <div class="tag-cloud">
+          {{ range $tag, $count := $tagMap }}
+            <a href="/tags/{{ Slugify $tag }}">
+              #{{ $tag }} ({{ $count }})
+            </a>
+          {{ end }}
+        </div>
+        ```
+
+    2.  Create a parametric page at `/content/tags/[tag].html` to display posts for a specific tag:
+        ```html
+        {{/* This is the rendering part of the parametric page */}}
+        {{ $currentTag := .Res.ParamName }}
+        <h1>Posts tagged with '{{ $currentTag }}'</h1>
+        <ul>
+          {{ $taggedPosts := (PagesByTag $currentTag true true 0 -1) }}
+          {{ range $taggedPosts }}
+            <li><a href="{{ .Base.Link }}">{{ .Base.Title }}</a></li>
+          {{ end }}
+        </ul>
+        ```
+
+### `json`
+
+Reads and parses a JSON file from your `content` directory. This is useful for site-wide configuration or data that you want to reuse across multiple pages.
+
+*   **Signature**: `json(path string, fieldpath string) (any, error)`
+*   **Usage Example**:
+    *   **Data File**: `content/SiteMetadata.json`
+        ```json
+        {
+          "title": "My Awesome Site",
+          "author": "John Doe"
+        }
+        ```
+    *   **Template**:
+        ```html
+        {{ $meta := json "SiteMetadata.json" "" }}
+        <footer>
+          <p>© {{ Now.Year }} {{ $meta.author }}</p>
+        </footer>
+        ```
 
 ## Passing Data to Templates
 
