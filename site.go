@@ -1,3 +1,4 @@
+// Package s3gen is a simple, flexible, rule-based static site generator for Go developers.
 package s3gen
 
 import (
@@ -17,85 +18,94 @@ import (
 	"github.com/radovskyb/watcher"
 )
 
-// The site object is one of the most central types in s3gen.  It contains all configuration
-// metadata for the site (eg input/output directories, template directories, static routes etc).
-// The Site is the central point for managing the building, live reloading, templating etc needed
-// to build and serve a static site.  This Site object also provides a http.HandlerFunc which can
-// be used to server it via a http.Server.
+// Site is the central object in s3gen. It contains all the configuration
+// and metadata for the website, and it orchestrates the build process.
 type Site struct {
+	// Templates is the template group that holds all the parsed templates
+	// and their functions.
 	Templates *tmplr.TemplateGroup
 
-	// Where our templates and loaders are
-	CommonFuncMap   map[string]any
-	TemplateFolders []string
-	LoaderList      *tmplr.LoaderList
+	// CommonFuncMap is a map of functions that will be available in all templates.
+	CommonFuncMap map[string]any
 
-	// ContentRoot is the root of all your pages.
-	// One structure we want to place is use folders to emphasis url structure too
-	// so a site with mysite.com/a/b/c/d
-	// would have the file structure:
-	// <ContentRoot>/a/b/c/d.<content_type>
+	// TemplateFolders is a list of directories where s3gen will look for templates.
+	TemplateFolders []string
+
+	// LoaderList is the list of template loaders.
+	LoaderList *tmplr.LoaderList
+
+	// ContentRoot is the root directory of your website's content. s3gen will
+	// walk this directory to find all the files to process.
 	ContentRoot string
 
-	// Final output directory where resources are generated/published to
+	// OutputDir is the directory where the generated static files will be written.
 	OutputDir string
 
-	// The http path prefix the site is prefixed in,
-	// The site could be served from a subpath in the domain, eg:
-	// eg
-	//		myblog.com								=> PathPrefix = "/"
-	//		myblog.com/blog						=> PathPrefix = "/blog"
-	//		myblog.com/blogs/blog1		=> PathPrefix = "/blogs/blog1"
-	//
-	// There is no restriction on this.  There could be other routes (eg /products page)
-	// that could be served by a different router all together in parallel to say /blog.
-	// This is only needed so that the generator knows where to "root" the blog in the URL
+	// PathPrefix is the URL path prefix for the site. For example, if your site
+	// is served at mydomain.com/blog, your PathPrefix would be "/blog".
 	PathPrefix string
 
-	// A list of folders where static files could be served from along with their
-	// http path prefixes.  This is an array of strings of the form
-	// [ path1, folder1, path2, folder2, path3, folder3 ....]
+	// StaticFolders is a list of directories that will be served as-is. It's
+	// a slice of strings in the format [path1, dir1, path2, dir2, ...].
 	StaticFolders []string
 
-	// When walking the content root for files, this callback specify which directories
-	// are to be ignored.
+	// IgnoreDirFunc is a function that determines whether a directory should be
+	// ignored during the build process.
 	IgnoreDirFunc func(dirpath string) bool
 
-	// When walking the content root for files, this callback specify which files
-	// are to be ignored.
+	// IgnoreFileFunc is a function that determines whether a file should be
+	// ignored during the build process.
 	IgnoreFileFunc func(filepath string) bool
 
+	// PriorityFunc is a function that determines the order in which resources
+	// are processed. This is crucial for handling dependencies.
 	PriorityFunc func(res *Resource) int
 
-	// Whether to enable live reload/rebuild of changed files or not
+	// LiveReload enables or disables live reloading during development.
 	LiveReload bool
-	LazyLoad   bool
 
+	// LazyLoad enables or disables lazy loading of resources.
+	LazyLoad bool
+
+	// DefaultBaseTemplate is the default template to use for rendering pages.
 	DefaultBaseTemplate BaseTemplate
-	GetTemplate         func(res *Resource, out *BaseTemplate)
-	CreateResourceBase  func(res *Resource)
 
-	BuildRules     []Rule
-	DefaultRule    Rule
+	// GetTemplate is a function that can be used to override the default
+	// template for a specific resource.
+	GetTemplate func(res *Resource, out *BaseTemplate)
+
+	// CreateResourceBase is a function that creates the base data structure
+	// for a resource.
+	CreateResourceBase func(res *Resource)
+
+	// BuildRules is a list of rules that define how to process different
+	// types of files.
+	BuildRules []Rule
+
+	// DefaultRule is the rule that will be used if no other rule matches a
+	// resource.
+	DefaultRule Rule
 	resourceInRule map[string]map[Rule]bool
 
+	// BuildFrequency is the interval at which the site will be rebuilt when
+	// in watch mode.
 	BuildFrequency time.Duration
 
-	// All files including published files will be served from here!
+	// mux is the HTTP request multiplexer used for serving the site.
 	mux *http.ServeMux
 
-	// This router wraps "published" files to ensure that when source
-	// files have changed - it recompiles them before calling the underlying
-	// file handler - only for non-static files
+	// reloadWatcher is the file watcher used for live reloading.
 	reloadWatcher *watcher.Watcher
 
+	// resources is a map of all the resources in the site, keyed by their
+	// full path.
 	resources map[string]*Resource
 	resedges  map[string][]string
 
 	initialized bool
 }
 
-// Initializes the Site
+// Init initializes the Site object with default values.
 func (s *Site) Init() *Site {
 	s.ContentRoot = gut.ExpandUserPath(s.ContentRoot)
 	s.resourceInRule = map[string]map[Rule]bool{}
@@ -151,8 +161,7 @@ func (s *Site) Init() *Site {
 	return s
 }
 
-// Returns the full url for a path relative to the site's prefix path.
-// If the Site's prefix path is /a/b/c, then PathRelUrl("d") would return /a/b/c/d
+// PathRelUrl returns the full URL for a path relative to the site's path prefix.
 func (s *Site) PathRelUrl(path string) string {
 	if s.PathPrefix == "" || s.PathPrefix == "/" {
 		return path
@@ -160,14 +169,14 @@ func (s *Site) PathRelUrl(path string) string {
 	return s.PathPrefix + path
 }
 
-// Add a new static http path and the folder from which its contents can be served.
+// HandleStatic adds a new static path to the site's router.
 func (s *Site) HandleStatic(path, folder string) *Site {
 	s.StaticFolders = append(s.StaticFolders, path)
 	s.StaticFolders = append(s.StaticFolders, folder)
 	return s
 }
 
-// Returns a Router instance that can serve this as a site under a larger prefix.
+// Handler returns an http.Handler that can be used to serve the site.
 func (s *Site) Handler() http.Handler {
 	if s.mux == nil {
 		s.mux = http.NewServeMux()
@@ -188,8 +197,7 @@ func (s *Site) Handler() http.Handler {
 	return s.mux
 }
 
-// The base entry point for a serving a site with our customer handler -
-// also implementing the http.Handler interface
+// ServeHTTP implements the http.Handler interface.
 func (s *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The entry point router for our site
 	// parts := strings.Split(r.URL.Path, "/")[1:]
@@ -197,7 +205,7 @@ func (s *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.Handler().ServeHTTP(w, r)
 }
 
-// A method to list all the resource in our site in the content root.  This method also allows pagination, filtering and sorting of resources.
+// ListResources returns a list of resources in the site, with optional filtering and sorting.
 func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 	sortFunc ResourceSortFunc,
 	offset int, count int) (foundResources []*Resource) {
@@ -258,10 +266,12 @@ func (s *Site) ListResources(filterFunc ResourceFilterFunc,
 	return
 }
 
+// GenerateSitemap generates a sitemap for the site.
 func (s *Site) GenerateSitemap() map[string]any {
 	return nil
 }
 
+// LoadParamValues loads the parameter values for a parametric resource.
 func (s *Site) LoadParamValues(res *Resource) (err error) {
 	if res.IsParametric {
 		output := bytes.NewBufferString("")
@@ -283,6 +293,8 @@ func (s *Site) LoadParamValues(res *Resource) (err error) {
 	return
 }
 
+// Rebuild rebuilds the entire site. If a list of resources is provided, only
+// those resources will be rebuilt.
 func (s *Site) Rebuild(rs []*Resource) {
 	if !s.initialized {
 		s.Init()
