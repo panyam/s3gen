@@ -93,14 +93,14 @@ title: "My Blog"
 
 ## Parametric Pages
 
-A parametric page is a template that can generate multiple pages from a single file. This is useful for things like tag and category pages, where the layout is the same but the content is different for each term.
+A parametric page is a template that can generate multiple pages from a single file. This is useful for things like tag and category pages, where the layout is the same but the content is different for each term. Parametric pages are handled by the built-in `ParametricPages` rule.
 
-To create a parametric page, you create a file with a name like `[param].html`. For example, a tag page might be at `content/tags/[tag].html`.
+To create a parametric page, you create a file with a name like `[param].html` or `[param].md`. For example, a tag page might be at `content/tags/[tag].html`.
 
-Inside this template, you'll have two main sections:
+The `ParametricPages` rule works in two phases, and your template must support both:
 
-1.  **Parameter Discovery**: The first part of the template is responsible for discovering all the possible values for the parameter. You'll typically use `s3gen`'s template functions to get a list of all your content and then extract the unique terms (e.g., all the unique tags). For each term, you'll call the `AddParam` function to tell `s3gen` to generate a page for that term.
-2.  **Page Rendering**: The second part of the template is responsible for rendering the page for a *specific* parameter value. `s3gen` will re-run the template for each parameter value it discovered, and in this second pass, you can access the current parameter value using `.Res.ParamName`.
+1.  **Discovery Phase**: `s3gen` first "pre-renders" the template to discover all possible values for the parameter. In this phase, the `.Res.ParamName` variable is an empty string. Your template logic should call the `AddParam` function for each value it finds (e.g., for each unique tag).
+2.  **Generation Phase**: After discovering the values, `s3gen` renders the template once for each value. In this phase, `.Res.ParamName` is set to the specific value for that page (e.g., "go", "react", etc.). Your template logic should use this value to filter and display the correct content.
 
 Here's a simplified example of a tag page at `content/tags/[tag].html`:
 
@@ -109,25 +109,35 @@ Here's a simplified example of a tag page at `content/tags/[tag].html`:
 title: "Tags"
 ---
 
+{{/* Check if we are in the discovery or generation phase */}}
 {{ if eq .Res.ParamName "" }}
-  {{/* Parameter Discovery Phase */}}
-  {{ $posts := PagesByDate false true 0 -1 }}
-  {{ $tagmap := AllTags $posts }}
-  {{ $sortedTags := KeysForTagMap $tagmap "-count" }}
+
+  {{/* --- Discovery Phase --- */}}
+  {{/* Find all unique tags and add them as parameters */}}
+  {{ $posts := (AllRes) }}
+  {{ $tagmap := (GetAllTags $posts) }}
+  {{ $sortedTags := (KeysForTagMap $tagmap "-count") }}
   {{ range $sortedTags }}
-    {{ .Res.AddParam (Slugify .) }}
+    {{ $.Res.AddParam . }}
   {{ end }}
+
 {{ else }}
-  {{/* Page Rendering Phase */}}
-  <h1>Posts tagged with "{{ .Res.ParamName }}"</h1>
-  {{ $posts := PagesByTag .Res.ParamName false true 0 -1 }}
+
+  {{/* --- Generation Phase --- */}}
+  {{ $currentTag := .Res.ParamName }}
+  <h1>Posts tagged with "{{ $currentTag }}"</h1>
+  
+  {{ $posts := (PagesByTag $currentTag false true 0 -1) }}
   <ul>
     {{ range $posts }}
       <li><a href="{{ .Base.Link }}">{{ .Base.Title }}</a></li>
     {{ end }}
   </ul>
+
 {{ end }}
 ```
+
+This two-phase model allows you to dynamically generate pages based on your content without any manual configuration.
 
 ## Using JSON Data
 

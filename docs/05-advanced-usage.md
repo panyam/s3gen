@@ -37,6 +37,41 @@ func main() {
 
 Now, when you run `go run main.go`, `s3gen` will start a server and watch your `content` and `templates` directories for changes. When you save a file, it will automatically rebuild your site.
 
+## Configuring Build Rules
+
+The `Site.BuildRules` slice defines the pipeline for processing your content. The order of rules in this slice is critical, as `s3gen` will use the **first rule** that successfully matches a resource.
+
+This allows you to prioritize specialized rules over more general ones. A key example of this is the `ParametricPages` rule, which must be configured to run *before* the standard `MDToHtml` and `HTMLToHtml` rules.
+
+Here is an example of a well-structured `BuildRules` configuration in a `site.go` file:
+
+```go
+// In your site's main.go or site.go
+var Site = s3.Site{
+    // ... other config
+    BuildRules: []s3gen.Rule{
+        // 1. The ParametricPages rule comes first. It is configured with a
+        //    map of renderers, telling it which specialized rule to use for
+        //    the final rendering step based on the file extension.
+        &s3gen.ParametricPages{
+            Renderers: map[string]s3gen.Rule{
+                ".md":  &s3gen.MDToHtml{BaseToHtmlRule: s3gen.BaseToHtmlRule{Extensions: []string{".md"}}},
+                ".mdx": &s3gen.MDToHtml{BaseToHtmlRule: s3gen.BaseToHtmlRule{Extensions: []string{".mdx"}}},
+                ".html": &s3gen.HTMLToHtml{BaseToHtmlRule: s3gen.BaseToHtmlRule{Extensions: []string{".html"}}},
+            },
+        },
+
+        // 2. The standard rules come next. These will only be used for
+        //    resources that were NOT matched by the ParametricPages rule.
+        &s3gen.MDToHtml{BaseToHtmlRule: s3gen.BaseToHtmlRule{Extensions: []string{".md", ".mdx"}}},
+        &s3gen.HTMLToHtml{BaseToHtmlRule: s3gen.BaseToHtmlRule{Extensions: []string{".html", ".htm"}}},
+    },
+    // ... other config
+}
+```
+
+By placing `ParametricPages` first, you ensure that files like `[tag].md` or `[category].html` are correctly identified and handled by the parametric engine. Any regular, non-parametric `.md` or `.html` files will not be matched by the `ParametricPages` rule and will fall through to be processed by the standard rules.
+
 ## Programmatic Use
 
 Because `s3gen` is a library first, you can easily embed it into a larger Go application. This is useful if you want to serve your static site from the same binary as your API or other web services.
