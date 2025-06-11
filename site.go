@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -84,7 +85,7 @@ type Site struct {
 
 	// DefaultRule is the rule that will be used if no other rule matches a
 	// resource.
-	DefaultRule Rule
+	DefaultRule    Rule
 	resourceInRule map[string]map[Rule]bool
 
 	// BuildFrequency is the interval at which the site will be rebuilt when
@@ -112,6 +113,17 @@ func (s *Site) Init() *Site {
 	if len(s.BuildRules) == 0 {
 		// setup some defaults
 		s.BuildRules = []Rule{
+			// A single, powerful rule for all parametric pages.
+			&ParametricPages{
+				Renderers: map[string]Rule{
+					// It knows to use MDToHtml for .md and .mdx files...
+					".md":  &MDToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".md"}}},
+					".mdx": &MDToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".mdx"}}},
+					// ...and HTMLToHtml for .html and .htm files.
+					".html": &HTMLToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".html"}}},
+					".htm":  &HTMLToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".htm"}}},
+				},
+			},
 			&MDToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".md", ".mdx"}}},
 			&HTMLToHtml{BaseToHtmlRule: BaseToHtmlRule{Extensions: []string{".htm", ".html"}}},
 		}
@@ -312,34 +324,42 @@ func (s *Site) Rebuild(rs []*Resource) {
 	}
 
 	for _, res := range rs {
-		for _, rule := range s.BuildRules {
-			if s.resourceMatchedByRule(res, rule) {
-				// this rule has already matched this resource and will be processed
-				// so skip this rule
-				continue
-			}
+		// Skip if a rule has already claimed this resource
+		if s.resourceMatchedARule(res) {
+			continue
+		}
 
-			// now see if this rule can process this rule
+		for _, rule := range s.BuildRules {
 			siblings, targets := rule.TargetsFor(s, res)
 			if len(targets) == 0 {
-				// rule cannot do anything with it
+				// Rule does not apply, try the next one.
 				continue
 			}
 
-			// TODO - See if cycle checking needed
-
+			// This rule applies, so mark the resource as handled.
 			s.addRuleForResource(res, rule)
+			slog.Debug("Rule matched", "resource", res.FullPath, "rule", rule)
 
-			// And run the rule
-			allres := append(siblings, res)
-			if err := rule.Run(s, allres, targets, stageFuncs(res)); err != nil {
-				log.Println("Error generating targest for res: ", res.FullPath, err)
+			// ** THE FIX IS HERE **
+			// A single input resource can generate multiple targets (e.g., parametric pages).
+			// We must iterate through each target and run the rule for it.
+			inputs := siblings
+			if !slices.Contains(siblings, res) {
+				inputs = append(siblings, res)
 			}
+			// Run the rule for each individual target.
+			if err := rule.Run(s, inputs, targets, stageFuncs(res)); err != nil {
+				log.Println("Error running rule for resource:", res.FullPath, "targets:", len(targets), "error:", err)
+			}
+
+			// Since a rule has been found and executed, break the inner loop
+			// and move to the next resource.
+			// break
 		}
 	}
 
-	// Now go through all resources that did NOT match any rules and pass them through the default rule - which is
-	// activated when no other rules match
+	// Now go through all resources that did NOT match any rules and pass them
+	// through the default rule - which is activated when no other rules match.
 	for _, res := range rs {
 		if !s.resourceMatchedARule(res) {
 			// log.Println("Default Matching: ", res.FullPath)
@@ -395,12 +415,12 @@ func (s *Site) addRuleForResource(res *Resource, rule Rule) {
 	s.resourceInRule[res.FullPath][rule] = true
 }
 
-// Tells if a particular sibling was "Activated" by a given rule
+// Tells if a particular resource was "activated" by any rule.
 func (s *Site) resourceMatchedARule(res *Resource) bool {
-	if s.resourceInRule[res.FullPath] == nil {
-		return false
+	if val, ok := s.resourceInRule[res.FullPath]; ok {
+		return len(val) > 0
 	}
-	return true
+	return false
 }
 
 func stageFuncs(res *Resource) map[string]any {

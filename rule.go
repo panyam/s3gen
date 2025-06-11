@@ -3,6 +3,7 @@ package s3gen
 import (
 	"log"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -78,14 +79,7 @@ func (m *BaseToHtmlRule) TargetsFor(s *Site, r *Resource) (siblings []*Resource,
 		return nil, nil
 	}
 
-	isValidExt := false
-	for _, ext := range m.Extensions {
-		if r.Ext() == ext {
-			isValidExt = true
-			break
-		}
-	}
-	if !isValidExt {
+	if !slices.Contains(m.Extensions, r.Ext()) {
 		return
 	}
 
@@ -161,17 +155,14 @@ func (h *BaseToHtmlRule) LoadResource(site *Site, r *Resource) error {
 	}
 
 	// check if it needs an index page - should this be only if we are NOT an index page?
-	for _, ext := range h.Extensions {
-		if r.Ext() == ext {
-			r.NeedsIndex = true
-			break
-		}
+	if slices.Contains(h.Extensions, r.Ext()) {
+		r.NeedsIndex = true
 	}
 
 	base = filepath.Base(r.WithoutExt(true))
 	r.IsParametric = base[0] == '[' && base[len(base)-1] == ']'
 
-	// TODO - this needs to go - nothing magical about "Page"
+	// TODO - this needs to go - nothing magical about "Base"
 	r.Site.CreateResourceBase(r)
 
 	return nil
