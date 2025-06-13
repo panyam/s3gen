@@ -100,7 +100,7 @@ A minimal `templates/base.html` to render the content:
     <title>{{.FrontMatter.title}}</title>
 </head>
 <body>
-    {{ .Content | HTML }}
+     {{ BytesToString .Content | HTML }}
 </body>
 </html>
 ```
