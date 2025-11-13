@@ -1,6 +1,7 @@
 package s3gen
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -9,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/adrg/frontmatter"
 	gfn "github.com/panyam/goutils/fn"
+	"gopkg.in/yaml.v2"
 )
 
 // ResourceLoader is an interface for loading and parsing a resource.
@@ -96,7 +99,7 @@ type Resource struct {
 	Site *Site
 
 	// Loader is the loader responsible for loading the resource's document.
-	Loader   ResourceLoader
+	Loader ResourceLoader
 	// Renderer is the renderer responsible for rendering the resource.
 	Renderer ResourceRenderer
 
@@ -124,9 +127,9 @@ type Resource struct {
 	// frontMatter holds the parsed front matter of the resource.
 	frontMatter FrontMatter
 	// Metadata is a map for storing arbitrary metadata about the resource.
-	Metadata    map[string]any
+	Metadata map[string]any
 	// Document is the parsed document of the resource.
-	Document    Document
+	Document Document
 
 	// Source is the resource that this resource was derived from. This is
 	// only set for output resources.
@@ -143,7 +146,7 @@ type Resource struct {
 	// NeedsIndex is true if the resource should be rendered as an index page.
 	NeedsIndex bool
 	// IsIndex is true if the resource is an index page.
-	IsIndex    bool
+	IsIndex bool
 }
 
 // Reset resets the resource's state to Pending so it can be reloaded.
@@ -262,7 +265,8 @@ func (r *Resource) FrontMatter() *FrontMatter {
 			// TODO: We want a library that just returns frontMatter and Length
 			// this way we dont need to load the entire content unless we needed
 			// and even then we could just do it via a reader
-			rest, err := frontmatter.Parse(f, r.frontMatter.Data)
+			// rest, err := frontmatter.Parse(f, r.frontMatter.Data)
+			rest, err := frontmatter.Parse(f, r.frontMatter.Data, DefaultFormats...)
 			r.frontMatter.Length = r.Info().Size() - int64(len(rest))
 			if err != nil {
 				r.Error = err
@@ -410,4 +414,16 @@ func (page *DefaultResourceBase) LoadFrom(res *Resource) error {
 		page.Link = fmt.Sprintf("%s/%s", site.PathPrefix, relpath)
 	}
 	return nil
+}
+
+var DefaultFormats []*frontmatter.Format = []*frontmatter.Format{
+	// YAML.
+	&frontmatter.Format{"---", "---", yaml.Unmarshal, false, false},
+	&frontmatter.Format{"---yaml", "---", yaml.Unmarshal, false, false},
+	// TOML.
+	&frontmatter.Format{"+++", "+++", toml.Unmarshal, false, false},
+	&frontmatter.Format{"---toml", "---", toml.Unmarshal, false, false},
+	// JSON.
+	&frontmatter.Format{";;;", ";;;", json.Unmarshal, false, false},
+	&frontmatter.Format{"---json", "---", json.Unmarshal, false, false},
 }

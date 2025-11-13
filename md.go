@@ -140,7 +140,6 @@ func (m *MDToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, func
 			// log.Println("Rendering Content: ", len(finalmd))
 			err := md.Renderer().Render(&b, finalmd, doc)
 			if err != nil {
-				log.Println("Did we come here???")
 				panic(err)
 			}
 			return htmpl.HTML(b.String()), err

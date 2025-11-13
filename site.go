@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/felixge/httpsnoop"
+	"github.com/gorilla/mux"
 	gotl "github.com/panyam/goutils/template"
 	gut "github.com/panyam/goutils/utils"
 	tmplr "github.com/panyam/templar"
@@ -329,6 +331,7 @@ func (s *Site) Rebuild(rs []*Resource) {
 			continue
 		}
 
+		log.Println("Processing: ", res.FullPath)
 		for _, rule := range s.BuildRules {
 			siblings, targets := rule.TargetsFor(s, res)
 			if len(targets) == 0 {
@@ -442,4 +445,32 @@ func stageFuncs(res *Resource) map[string]any {
 			return localData[key]
 		},
 	}
+}
+
+func (s *Site) Serve(address string) error {
+	// Attach our site to be at /`PathPrefix`
+	// The site will also take care of serving static files from /`PathPrefix`/static paths
+	router := mux.NewRouter()
+	router.PathPrefix(s.PathPrefix).Handler(http.StripPrefix(s.PathPrefix, s))
+	// router.PathPrefix(s.PathPrefix).Handler(s)
+
+	srv := &http.Server{
+		Handler: withLogger(router),
+		Addr:    address,
+		// Good practice: enforce timeouts for servers you create!
+		// WriteTimeout: 15 * time.Second,
+		// ReadTimeout:  15 * time.Second,
+	}
+	log.Printf("Serving site on %s:", address)
+	return srv.ListenAndServe()
+}
+
+func withLogger(handler http.Handler) http.Handler {
+	// the create a handler
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		// pass the handler to httpsnoop to get http status and latency
+		m := httpsnoop.CaptureMetrics(handler, writer, request)
+		// printing exracted data
+		log.Printf("http[%d]-- %s -- %s\n", m.Code, m.Duration, request.URL.Path)
+	})
 }

@@ -23,8 +23,12 @@ func (s *Site) DefaultFuncMap() map[string]any {
 		"AllTags":       GetAllTags,
 		"KeysForTagMap": s.KeysForTagMap,
 		"json":          s.Json,
-		"HtmlTemplate":  s.RenderHtmlTemplate,
-		"TextTemplate":  s.RenderTextTemplate,
+		"debug": func(vals ...any) string {
+			log.Println(vals...)
+			return ""
+		},
+		"HtmlTemplate": s.RenderHtmlTemplate,
+		"TextTemplate": s.RenderTextTemplate,
 		"AllRes": func() []*Resource {
 			resources := s.ListResources(
 				func(res *Resource) bool {
@@ -251,11 +255,19 @@ func (s *Site) Json(path string, fieldpath string) (any, error) {
 
 	data, err := res.ReadAll()
 	if err != nil {
+		log.Println("Error here??: ", err)
 		return nil, err
 	}
 	out, err := gut.JsonDecodeBytes(data)
 	if err != nil {
 		log.Println("Error Decoding Json: ", path, err)
 	}
-	return out, err
+	if fieldpath == "" {
+		return out, err
+	}
+	v, ok := out.(map[string]any)
+	if !ok {
+		return "Invalid json", nil
+	}
+	return v[fieldpath], err
 }
