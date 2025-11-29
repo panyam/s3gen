@@ -135,6 +135,49 @@ func (m *BaseToHtmlRule) TargetsFor(s *Site, r *Resource) (siblings []*Resource,
 	return
 }
 
+// HandleAssets implements AssetAwareRule for co-located asset handling.
+// Assets are copied to the same directory as the output HTML file.
+// For parametric pages, assets go to a shared folder with content-hash deduplication.
+func (h *BaseToHtmlRule) HandleAssets(site *Site, res *Resource, assets []*Resource) ([]AssetMapping, error) {
+	var mappings []AssetMapping
+
+	for _, asset := range assets {
+		var destPath string
+
+		if res.IsParametric {
+			// Parametric pages: assets go to shared folder with content-hash
+			hash := ContentHashShort(asset)
+			destPath = filepath.Join(site.SharedAssetsDir, hash, filepath.Base(asset.FullPath))
+		} else {
+			// Non-parametric: co-locate with output
+			respath := res.RelPath()
+			if respath == "" {
+				continue
+			}
+
+			ext := filepath.Ext(respath)
+			rem := respath[:len(respath)-len(ext)]
+
+			var destDir string
+			if res.IsIndex {
+				destDir = filepath.Dir(respath)
+			} else {
+				destDir = rem
+			}
+
+			destPath = filepath.Join(destDir, filepath.Base(asset.FullPath))
+		}
+
+		mappings = append(mappings, AssetMapping{
+			Source: asset,
+			Dest:   destPath,
+			Action: AssetCopy,
+		})
+	}
+
+	return mappings, nil
+}
+
 // LoadResource loads a resource and sets its basic properties, such as
 // whether it's an index page or a parametric page.
 func (h *BaseToHtmlRule) LoadResource(site *Site, r *Resource) error {

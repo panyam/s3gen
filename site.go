@@ -566,6 +566,12 @@ func stageFuncs(res *Resource) map[string]any {
 			// log.Printf("Gettin Key %s in resource %s", key, res.FullPath)
 			return localData[key]
 		},
+		// AssetURL returns the URL for a co-located asset file.
+		// For normal pages, returns relative path (./filename).
+		// For parametric pages, returns shared assets path (/_assets/hash/filename).
+		"AssetURL": func(filename string) string {
+			return GetAssetURL(res.Site, res, filename)
+		},
 	}
 }
 
@@ -601,8 +607,11 @@ func withLogger(handler http.Handler) http.Handler {
 // Assets are determined by matching files in the same directory against
 // AssetPatterns (site-level) or the "assets" frontmatter field (per-resource).
 func (s *Site) discoverAssets(res *Resource) {
-	// Only content files can have assets
-	if !res.NeedsIndex && !res.IsIndex {
+	// Only content files can have assets - detect by extension
+	// since NeedsIndex/IsIndex aren't set until LoadResource runs later
+	ext := res.Ext()
+	isContentFile := ext == ".md" || ext == ".html" || ext == ".htm"
+	if !isContentFile {
 		return
 	}
 

@@ -36,12 +36,19 @@ This plan extends s3gen with a phase-based architecture that enables:
 |------|-------------|--------|
 | 7 | Transform Rules (CSSMinifier, ExternalTransform, CopyRule) | ✅ Done |
 
-### 🔲 Remaining (Phase 4 - Advanced)
+### ✅ Completed (Phase 4 - Co-Located Assets)
 
 | Step | Description | Status |
 |------|-------------|--------|
-| 8 | Graph Integration (topological sort) | 🔲 Partial |
-| 9 | Image optimization transforms | 🔲 Not started |
+| 8 | Co-located asset discovery and copying | ✅ Done |
+| 9 | AssetURL template function | ✅ Done |
+
+### 🔲 Remaining (Phase 5 - Advanced)
+
+| Step | Description | Status |
+|------|-------------|--------|
+| 10 | Graph Integration (topological sort) | 🔲 Partial |
+| 11 | Image optimization transforms | 🔲 Not started |
 
 ---
 
@@ -329,3 +336,5 @@ make run
 - Parametric pages (tags, pagination) work
 - CSS loads correctly
 - All HTTP 200 responses
+- Co-located assets: images next to markdown are discovered and copied
+- AssetURL template function returns correct relative paths

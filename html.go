@@ -124,8 +124,15 @@ func (h *HTMLToHtml) LoadResourceTemplate(site *Site, r *Resource) ([]byte, erro
 		"FrontMatter": r.FrontMatter().Data,
 	}
 
+	// Include AssetURL function for co-located asset references
+	funcs := map[string]any{
+		"AssetURL": func(filename string) string {
+			return GetAssetURL(r.Site, r, filename)
+		},
+	}
+
 	finalmd := bytes.NewBufferString("")
-	err = r.Site.Templates.RenderHtmlTemplate(finalmd, template, "", params, nil)
+	err = r.Site.Templates.RenderHtmlTemplate(finalmd, template, "", params, funcs)
 	if err != nil {
 		log.Println("Error loading template content: ", err, r.FullPath)
 		return nil, err
