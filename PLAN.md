@@ -24,12 +24,18 @@ This plan extends s3gen with a phase-based architecture that enables:
 | 4 | Asset Utilities in `assets.go` | ✅ Done |
 | 5 | Update Existing Rules | ✅ Done |
 
-### 🔲 Remaining (Phase 2 - Extensions)
+### ✅ Completed (Phase 2 - Generators)
 
 | Step | Description | Status |
 |------|-------------|--------|
-| 6 | Example Generators (sitemap, RSS) | 🔲 Not started |
+| 6 | Example Generators (sitemap, RSS) | ✅ Done |
+
+### 🔲 Remaining (Phase 3 - Advanced)
+
+| Step | Description | Status |
+|------|-------------|--------|
 | 7 | Graph Integration (topological sort) | 🔲 Partial |
+| 8 | Transform Rules (SCSS, image optimization) | 🔲 Not started |
 
 ---
 
@@ -121,6 +127,7 @@ const (
 |------|---------|
 | `phase.go` | BuildPhase, BuildContext, HookRegistry, PhaseRule, AssetAwareRule, LegacyRuleAdapter |
 | `assets.go` | contentHash(), ContentHashShort(), GetAssetURL(), DefaultAssetHandler |
+| `generators.go` | SitemapGenerator, RSSGenerator - hook-based Finalize phase generators |
 
 ### Modified Files
 
