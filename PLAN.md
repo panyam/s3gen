@@ -30,12 +30,18 @@ This plan extends s3gen with a phase-based architecture that enables:
 |------|-------------|--------|
 | 6 | Example Generators (sitemap, RSS) | ✅ Done |
 
-### 🔲 Remaining (Phase 3 - Advanced)
+### ✅ Completed (Phase 3 - Transform Rules)
 
 | Step | Description | Status |
 |------|-------------|--------|
-| 7 | Graph Integration (topological sort) | 🔲 Partial |
-| 8 | Transform Rules (SCSS, image optimization) | 🔲 Not started |
+| 7 | Transform Rules (CSSMinifier, ExternalTransform, CopyRule) | ✅ Done |
+
+### 🔲 Remaining (Phase 4 - Advanced)
+
+| Step | Description | Status |
+|------|-------------|--------|
+| 8 | Graph Integration (topological sort) | 🔲 Partial |
+| 9 | Image optimization transforms | 🔲 Not started |
 
 ---
 
@@ -128,6 +134,7 @@ const (
 | `phase.go` | BuildPhase, BuildContext, HookRegistry, PhaseRule, AssetAwareRule, LegacyRuleAdapter |
 | `assets.go` | contentHash(), ContentHashShort(), GetAssetURL(), DefaultAssetHandler |
 | `generators.go` | SitemapGenerator, RSSGenerator - hook-based Finalize phase generators |
+| `transforms.go` | CSSMinifier, ExternalTransform, CopyRule - Transform phase rules |
 
 ### Modified Files
 
