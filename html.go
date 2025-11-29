@@ -11,10 +11,25 @@ import (
 	gotl "github.com/panyam/templar"
 )
 
-// A rule that converts <ContentRoot>/a/b/c.md -> <OutputDir>/a/b/c/index.html
-// by Applying the root template defined in c.md as is
+// A rule that converts <ContentRoot>/a/b/c.html -> <OutputDir>/a/b/c/index.html
+// by applying the root template defined in c.html as is
 type HTMLToHtml struct {
 	BaseToHtmlRule
+}
+
+// Phase returns PhaseGenerate - HTML template conversion happens in the generate phase.
+func (h *HTMLToHtml) Phase() BuildPhase {
+	return PhaseGenerate
+}
+
+// DependsOn returns nil - HTMLToHtml doesn't depend on other rules.
+func (h *HTMLToHtml) DependsOn() []string {
+	return nil
+}
+
+// Produces returns the patterns of files this rule generates.
+func (h *HTMLToHtml) Produces() []string {
+	return []string{"**/*.html"}
 }
 
 func (h *HTMLToHtml) TargetsFor(s *Site, r *Resource) (siblings []*Resource, targets []*Resource) {

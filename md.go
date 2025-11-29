@@ -27,6 +27,21 @@ type MDToHtml struct {
 	BaseToHtmlRule
 }
 
+// Phase returns PhaseGenerate - markdown conversion happens in the generate phase.
+func (m *MDToHtml) Phase() BuildPhase {
+	return PhaseGenerate
+}
+
+// DependsOn returns nil - MDToHtml doesn't depend on other rules.
+func (m *MDToHtml) DependsOn() []string {
+	return nil
+}
+
+// Produces returns the patterns of files this rule generates.
+func (m *MDToHtml) Produces() []string {
+	return []string{"**/*.html"}
+}
+
 func (m *MDToHtml) MD() (md goldmark.Markdown, tocTransformer *TOCTransformer) {
 	tocTransformer = NewTOCTransformer()
 	md = goldmark.New(
@@ -39,6 +54,23 @@ func (m *MDToHtml) MD() (md goldmark.Markdown, tocTransformer *TOCTransformer) {
 				highlighting.WithFormatOptions(
 				// chromahtml.WithLineNumbers(true),
 				),
+				highlighting.WithWrapperRenderer(func(w util.BufWriter, ctx highlighting.CodeBlockContext, entering bool) {
+					lang, ok := ctx.Language()
+					if ok && string(lang) == "mermaid" {
+						if entering {
+							w.WriteString(`<pre class="mermaid">`)
+						} else {
+							w.WriteString(`</pre>`)
+						}
+						return
+					}
+					// Default behavior for other languages
+					if entering {
+						w.WriteString(`<pre><code>`)
+					} else {
+						w.WriteString(`</code></pre>`)
+					}
+				}),
 			),
 			&anchor.Extender{},
 		),

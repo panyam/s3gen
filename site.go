@@ -106,6 +106,22 @@ type Site struct {
 	resedges  map[string][]string
 
 	initialized bool
+
+	// AssetPatterns defines glob patterns for files that should be treated
+	// as assets of co-located content files. Patterns are relative to the
+	// content file's directory. Example: []string{"*.png", "*.jpg", "*.svg"}
+	AssetPatterns []string
+
+	// PhaseRules organizes rules by the phase they run in.
+	// This is populated during Init() from BuildRules.
+	PhaseRules map[BuildPhase][]Rule
+
+	// Hooks provides callbacks for observing build events.
+	Hooks *HookRegistry
+
+	// SharedAssetsDir is the directory name for shared assets (used by parametric pages).
+	// Defaults to "_assets" if not set.
+	SharedAssetsDir string
 }
 
 // Init initializes the Site object with default values.
@@ -171,6 +187,32 @@ func (s *Site) Init() *Site {
 	if s.resources == nil {
 		s.resources = make(map[string]*Resource)
 	}
+
+	// Initialize hooks
+	if s.Hooks == nil {
+		s.Hooks = NewHookRegistry()
+	}
+
+	// Set default shared assets directory
+	if s.SharedAssetsDir == "" {
+		s.SharedAssetsDir = "_assets"
+	}
+
+	// Migrate BuildRules to PhaseRules
+	if s.PhaseRules == nil {
+		s.PhaseRules = make(map[BuildPhase][]Rule)
+	}
+	for _, rule := range s.BuildRules {
+		if phaseRule, ok := rule.(PhaseRule); ok {
+			phase := phaseRule.Phase()
+			s.PhaseRules[phase] = append(s.PhaseRules[phase], rule)
+		} else {
+			// Wrap legacy rule - it will run in Generate phase
+			s.PhaseRules[PhaseGenerate] = append(s.PhaseRules[PhaseGenerate],
+				&LegacyRuleAdapter{Wrapped: rule})
+		}
+	}
+
 	s.initialized = true
 	return s
 }
@@ -307,84 +349,163 @@ func (s *Site) LoadParamValues(res *Resource) (err error) {
 	return
 }
 
-// Rebuild rebuilds the entire site. If a list of resources is provided, only
-// those resources will be rebuilt.
+// Rebuild rebuilds the entire site using a 4-phase pipeline.
+// If a list of resources is provided, only those resources will be rebuilt.
+// Phases: Discover → Transform → Generate → Finalize
 func (s *Site) Rebuild(rs []*Resource) {
 	if !s.initialized {
 		s.Init()
 	}
+
+	// Create build context
+	ctx := &BuildContext{
+		Site:           s,
+		CreatedInPhase: make(map[BuildPhase][]*Resource),
+		hooks:          s.Hooks,
+	}
+
+	// === PHASE: Discover ===
+	ctx.CurrentPhase = PhaseDiscover
+	log.Printf("=== Phase: %s ===", ctx.CurrentPhase)
+	ctx.hooks.emitPhaseStart(ctx)
+
 	if rs == nil {
 		rs = s.ListResources(nil, nil, 0, 0)
 	}
 
-	if s.PriorityFunc != nil {
-		sort.Slice(rs, func(idx1, idx2 int) bool {
-			ent1 := rs[idx1]
-			ent2 := rs[idx2]
-			return s.PriorityFunc(ent1) < s.PriorityFunc(ent2)
-		})
+	// Discover assets for each content resource
+	for _, res := range rs {
+		s.discoverAssets(res)
 	}
 
-	for _, res := range rs {
+	// Sort by priority
+	if s.PriorityFunc != nil {
+		sort.Slice(rs, func(idx1, idx2 int) bool {
+			return s.PriorityFunc(rs[idx1]) < s.PriorityFunc(rs[idx2])
+		})
+	}
+	ctx.Resources = rs
+	ctx.hooks.emitPhaseEnd(ctx)
+
+	// === PHASE: Transform ===
+	ctx.CurrentPhase = PhaseTransform
+	log.Printf("=== Phase: %s ===", ctx.CurrentPhase)
+	ctx.hooks.emitPhaseStart(ctx)
+	s.runPhase(ctx, PhaseTransform)
+	ctx.hooks.emitPhaseEnd(ctx)
+
+	// === PHASE: Generate ===
+	ctx.CurrentPhase = PhaseGenerate
+	log.Printf("=== Phase: %s ===", ctx.CurrentPhase)
+	ctx.hooks.emitPhaseStart(ctx)
+	s.runPhase(ctx, PhaseGenerate)
+	ctx.hooks.emitPhaseEnd(ctx)
+
+	// Handle resources that didn't match any rule (default behavior)
+	s.handleUnmatchedResources(ctx)
+
+	// === PHASE: Finalize ===
+	ctx.CurrentPhase = PhaseFinalize
+	log.Printf("=== Phase: %s ===", ctx.CurrentPhase)
+	ctx.hooks.emitPhaseStart(ctx)
+	s.runPhase(ctx, PhaseFinalize)
+	ctx.hooks.emitPhaseEnd(ctx)
+
+	// Report errors
+	if len(ctx.Errors) > 0 {
+		log.Printf("Build completed with %d errors", len(ctx.Errors))
+		for _, err := range ctx.Errors {
+			log.Printf("  - %v", err)
+		}
+	}
+}
+
+// runPhase executes all rules for a specific phase.
+func (s *Site) runPhase(ctx *BuildContext, phase BuildPhase) {
+	rules := s.getRulesForPhase(phase)
+	rules = s.topologicalSortRules(rules)
+
+	for _, res := range ctx.Resources {
+		// Skip assets - they're handled with their parent resource
+		if res.AssetOf != nil {
+			continue
+		}
+
 		// Skip if a rule has already claimed this resource
 		if s.resourceMatchedARule(res) {
 			continue
 		}
 
-		log.Println("Processing: ", res.FullPath)
-		for _, rule := range s.BuildRules {
+		for _, rule := range rules {
 			siblings, targets := rule.TargetsFor(s, res)
 			if len(targets) == 0 {
-				// Rule does not apply, try the next one.
 				continue
 			}
 
-			// This rule applies, so mark the resource as handled.
 			s.addRuleForResource(res, rule)
-			slog.Debug("Rule matched", "resource", res.FullPath, "rule", rule)
+			slog.Debug("Rule matched", "phase", phase, "resource", res.FullPath, "rule", rule)
 
-			// ** THE FIX IS HERE **
-			// A single input resource can generate multiple targets (e.g., parametric pages).
-			// We must iterate through each target and run the rule for it.
+			// Handle co-located assets if the rule supports it
+			if assetRule, ok := rule.(AssetAwareRule); ok && len(res.Assets) > 0 {
+				mappings, err := assetRule.HandleAssets(s, res, res.Assets)
+				if err != nil {
+					ctx.AddError(err)
+				} else if err := s.processAssetMappings(mappings); err != nil {
+					ctx.AddError(err)
+				}
+			}
+
 			inputs := siblings
 			if !slices.Contains(siblings, res) {
 				inputs = append(siblings, res)
 			}
-			// Run the rule for each individual target.
+
 			if err := rule.Run(s, inputs, targets, stageFuncs(res)); err != nil {
-				log.Println("Error running rule for resource:", res.FullPath, "targets:", len(targets), "error:", err)
+				log.Printf("Error running rule for %s: %v", res.FullPath, err)
+				ctx.AddError(err)
+			} else {
+				// Track generated targets
+				for _, t := range targets {
+					t.ProducedBy = rule
+					t.ProducedAt = phase
+					ctx.AddTarget(t)
+				}
+
+				// Emit hook
+				ctx.hooks.emitResourceProcessed(ctx, res, targets)
 			}
 
-			// Parametric pages are fully handled by ParametricPages rule which
-			// delegates internally - don't let other rules also try to match
+			// Parametric pages are fully handled by ParametricPages rule
 			if res.IsParametric {
 				break
 			}
 		}
 	}
+}
 
-	// Now go through all resources that did NOT match any rules and pass them
-	// through the default rule - which is activated when no other rules match.
-	for _, res := range rs {
+// handleUnmatchedResources processes resources that didn't match any rule.
+func (s *Site) handleUnmatchedResources(ctx *BuildContext) {
+	for _, res := range ctx.Resources {
+		// Skip assets
+		if res.AssetOf != nil {
+			continue
+		}
+
 		if !s.resourceMatchedARule(res) {
-			// log.Println("Default Matching: ", res.FullPath)
-			// apply the default rule on this
 			rule := s.DefaultRule
 			if rule != nil {
 				siblings, targets := rule.TargetsFor(s, res)
 				if targets == nil {
-					// rule cannot do anything with it
 					continue
 				}
 
-				// Dont add the rule for this resource
 				allres := append(siblings, res)
 				if err := rule.Run(s, allres, targets, stageFuncs(res)); err != nil {
-					log.Println("Error generating targest for res: ", res.FullPath, err)
+					log.Printf("Error in default rule for %s: %v", res.FullPath, err)
+					ctx.AddError(err)
 				}
 			} else {
-				// log.Println("No rule found, copying: ", res.FullPath)
-				// if no default rule then just copy it over
+				// Copy unmatched files as-is
 				respath, found := strings.CutPrefix(res.FullPath, s.ContentRoot)
 				if !found {
 					log.Println("Respath not found: ", res.FullPath, s.ContentRoot)
@@ -393,7 +514,6 @@ func (s *Site) Rebuild(rs []*Resource) {
 					destres := s.GetResource(destpath)
 					destres.Source = res
 					destres.EnsureDir()
-					// log.Println("Copying No resource loader for : ", res.RelPath(), ", copying over to: ", destpath)
 					data, err := res.ReadAll()
 					if err != nil {
 						log.Println("Could not read resource: ", res.FullPath, err)
@@ -475,4 +595,202 @@ func withLogger(handler http.Handler) http.Handler {
 		// printing exracted data
 		log.Printf("http[%d]-- %s -- %s\n", m.Code, m.Duration, request.URL.Path)
 	})
+}
+
+// discoverAssets identifies co-located assets for a content resource.
+// Assets are determined by matching files in the same directory against
+// AssetPatterns (site-level) or the "assets" frontmatter field (per-resource).
+func (s *Site) discoverAssets(res *Resource) {
+	// Only content files can have assets
+	if !res.NeedsIndex && !res.IsIndex {
+		return
+	}
+
+	dir := filepath.Dir(res.FullPath)
+
+	// Get patterns: frontmatter overrides site-level
+	patterns := s.AssetPatterns
+	if fm := res.FrontMatter(); fm != nil && fm.Data != nil {
+		if fmAssets, ok := fm.Data["assets"].([]any); ok {
+			patterns = nil
+			for _, p := range fmAssets {
+				if ps, ok := p.(string); ok {
+					patterns = append(patterns, ps)
+				}
+			}
+		}
+	}
+
+	if len(patterns) == 0 {
+		return // No asset patterns defined
+	}
+
+	// Find matching files
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(dir, pattern))
+		if err != nil {
+			log.Printf("Error matching asset pattern %s: %v", pattern, err)
+			continue
+		}
+
+		for _, match := range matches {
+			if match == res.FullPath {
+				continue // Skip self
+			}
+
+			asset := s.GetResource(match)
+			asset.AssetOf = res
+			res.Assets = append(res.Assets, asset)
+		}
+	}
+
+	if len(res.Assets) > 0 {
+		slog.Debug("Discovered assets", "resource", res.FullPath, "count", len(res.Assets))
+	}
+}
+
+// getRulesForPhase returns all rules registered for a specific phase.
+func (s *Site) getRulesForPhase(phase BuildPhase) []Rule {
+	return s.PhaseRules[phase]
+}
+
+// topologicalSortRules orders rules within a phase based on their dependencies.
+// Rules that produce what other rules depend on will run first.
+func (s *Site) topologicalSortRules(rules []Rule) []Rule {
+	if len(rules) <= 1 {
+		return rules
+	}
+
+	// Build dependency graph: rule -> rules it depends on
+	deps := make(map[Rule][]Rule)
+	inDegree := make(map[Rule]int)
+
+	for _, rule := range rules {
+		inDegree[rule] = 0
+	}
+
+	for _, rule := range rules {
+		pr, ok := rule.(PhaseRule)
+		if !ok {
+			continue
+		}
+
+		depends := pr.DependsOn()
+		if len(depends) == 0 {
+			continue
+		}
+
+		for _, other := range rules {
+			if other == rule {
+				continue
+			}
+			otherPR, ok := other.(PhaseRule)
+			if !ok {
+				continue
+			}
+
+			produces := otherPR.Produces()
+			if patternsOverlap(depends, produces) {
+				// rule depends on other
+				deps[rule] = append(deps[rule], other)
+				inDegree[rule]++
+			}
+		}
+	}
+
+	// Kahn's algorithm
+	var queue []Rule
+	for _, rule := range rules {
+		if inDegree[rule] == 0 {
+			queue = append(queue, rule)
+		}
+	}
+
+	var sorted []Rule
+	for len(queue) > 0 {
+		rule := queue[0]
+		queue = queue[1:]
+		sorted = append(sorted, rule)
+
+		// Find rules that depend on this one and decrement their in-degree
+		for _, r := range rules {
+			for _, dep := range deps[r] {
+				if dep == rule {
+					inDegree[r]--
+					if inDegree[r] == 0 {
+						queue = append(queue, r)
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// If we couldn't sort all rules, there's a cycle - return original order
+	if len(sorted) != len(rules) {
+		log.Println("Warning: cycle detected in rule dependencies, using original order")
+		return rules
+	}
+
+	return sorted
+}
+
+// patternsOverlap checks if any pattern in set1 could match files that
+// any pattern in set2 could produce.
+func patternsOverlap(depends, produces []string) bool {
+	for _, d := range depends {
+		for _, p := range produces {
+			// Simple overlap check: if patterns share common extensions or prefixes
+			// A more sophisticated implementation would use proper glob matching
+			dExt := filepath.Ext(d)
+			pExt := filepath.Ext(p)
+			if dExt != "" && pExt != "" && dExt == pExt {
+				return true
+			}
+			// Check if one is a subset of the other
+			if strings.Contains(d, p) || strings.Contains(p, d) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// processAssetMappings handles the actual copying/processing of asset files.
+func (s *Site) processAssetMappings(mappings []AssetMapping) error {
+	for _, m := range mappings {
+		switch m.Action {
+		case AssetCopy:
+			destPath := filepath.Join(s.OutputDir, m.Dest)
+			if err := s.copyAsset(m.Source, destPath); err != nil {
+				return err
+			}
+		case AssetProcess:
+			// TODO: Run through transform rules
+			log.Printf("Asset processing not yet implemented for: %s", m.Source.FullPath)
+		case AssetSkip:
+			// Do nothing
+		}
+	}
+	return nil
+}
+
+// copyAsset copies a source asset to the destination path.
+func (s *Site) copyAsset(source *Resource, destPath string) error {
+	// Ensure destination directory exists
+	destDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return err
+	}
+
+	data, err := source.ReadAll()
+	if err != nil {
+		// Try reading raw file for non-content assets
+		data, err = os.ReadFile(source.FullPath)
+		if err != nil {
+			return err
+		}
+	}
+
+	return os.WriteFile(destPath, data, 0644)
 }

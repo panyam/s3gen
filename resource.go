@@ -147,6 +147,20 @@ type Resource struct {
 	NeedsIndex bool
 	// IsIndex is true if the resource is an index page.
 	IsIndex bool
+
+	// Assets is a list of co-located assets (images, data files) for this resource.
+	// These are identified during the Discover phase based on AssetPatterns.
+	Assets []*Resource
+
+	// AssetOf is the parent resource if this resource is a co-located asset.
+	// If non-nil, this resource should not be processed as standalone content.
+	AssetOf *Resource
+
+	// ProducedBy is the rule that generated this resource (for output resources).
+	ProducedBy Rule
+
+	// ProducedAt is the build phase in which this resource was generated.
+	ProducedAt BuildPhase
 }
 
 // Reset resets the resource's state to Pending so it can be reloaded.
@@ -159,6 +173,10 @@ func (r *Resource) Reset() {
 	r.Document.Loaded = false
 	r.Base = nil
 	r.ParamValues = nil
+	r.Assets = nil
+	r.AssetOf = nil
+	r.ProducedBy = nil
+	r.ProducedAt = 0
 }
 
 // SetMetadata sets a metadata key-value pair on the resource.

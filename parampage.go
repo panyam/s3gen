@@ -26,6 +26,21 @@ type ParametricPages struct {
 	Renderers map[string]Rule
 }
 
+// Phase returns PhaseGenerate - parametric page expansion happens in the generate phase.
+func (p *ParametricPages) Phase() BuildPhase {
+	return PhaseGenerate
+}
+
+// DependsOn returns nil - ParametricPages doesn't depend on other rules.
+func (p *ParametricPages) DependsOn() []string {
+	return nil
+}
+
+// Produces returns the patterns of files this rule generates.
+func (p *ParametricPages) Produces() []string {
+	return []string{"**/*.html"}
+}
+
 // TargetsFor first checks if the resource's extension is supported by one of its
 // renderers. If so, it performs a "discovery" render to populate the resource's
 // ParamValues, then generates a target resource for each of those values.
