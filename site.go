@@ -355,9 +355,11 @@ func (s *Site) Rebuild(rs []*Resource) {
 				log.Println("Error running rule for resource:", res.FullPath, "targets:", len(targets), "error:", err)
 			}
 
-			// Since a rule has been found and executed, break the inner loop
-			// and move to the next resource.
-			// break
+			// Parametric pages are fully handled by ParametricPages rule which
+			// delegates internally - don't let other rules also try to match
+			if res.IsParametric {
+				break
+			}
 		}
 	}
 
