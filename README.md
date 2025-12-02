@@ -15,8 +15,12 @@ S3Gen is a simple static site generator written in Go. It lets you do some frequ
 ## Key Features
 
 *   **Rule-based build system**: Process files exactly how you want.
+*   **Four-phase build pipeline**: Discover → Transform → Generate → Finalize
 *   **Powerful Go-based templating**: with includes, custom functions, and more.
 *   **Parametric Routes**: Generate multiple pages from a single template (e.g., for tags or categories).
+*   **Co-located Assets**: Place images next to your markdown files.
+*   **Transform Rules**: SCSS, TypeScript, CSS minification, and more.
+*   **Generators**: Sitemap, RSS feed, and custom site-wide artifacts.
 *   **Live Reloading** for rapid development.
 *   **Extensible**: Add your own content types and build rules.
 *   **Library-first**: Use it as a standalone CLI or embed it in your own Go application.
@@ -68,9 +72,30 @@ var Site = s3.Site{
 	DefaultBaseTemplate: s3.BaseTemplate{
 		Name: "base.html",
 	},
+	// Co-located asset patterns
+	AssetPatterns: []string{
+		"*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg",
+	},
+}
+
+// Generators for site-wide artifacts
+var sitemapGen = &s3.SitemapGenerator{
+	BaseURL:    "https://example.com",
+	OutputPath: "sitemap.xml",
+}
+
+var rssGen = &s3.RSSGenerator{
+	Title:       "My Blog",
+	Description: "Latest posts",
+	BaseURL:     "https://example.com",
+	OutputPath:  "feed.xml",
 }
 
 func main() {
+	// Register generators
+	sitemapGen.Register(&Site)
+	rssGen.Register(&Site)
+
 	if os.Getenv("APP_ENV") != "production" {
 		log.Println("Starting watcher...")
 		Site.Watch()
@@ -111,9 +136,52 @@ To run the build:
 go run main.go
 ```
 
-## Where to Go Next
+## Documentation
 
-For more detailed documentation, please see the `/docs`(https://github.com/panyam/s3gen/tree/main/docs) directory.
+For detailed documentation, see the `/docs` directory:
+
+| Document | Description |
+|----------|-------------|
+| [01-introduction.md](docs/01-introduction.md) | Philosophy and use cases |
+| [02-core-concepts.md](docs/02-core-concepts.md) | Site, Resources, Rules, Build Process |
+| [03-templating-guide.md](docs/03-templating-guide.md) | Template functions and syntax |
+| [04-creating-content.md](docs/04-creating-content.md) | Front matter, parametric pages, JSON data |
+| [05-advanced-usage.md](docs/05-advanced-usage.md) | Custom rules, programmatic use |
+| [06-phase-based-architecture.md](docs/06-phase-based-architecture.md) | The four-phase build pipeline |
+| [07-co-located-assets.md](docs/07-co-located-assets.md) | Images and files next to content |
+| [08-transform-rules.md](docs/08-transform-rules.md) | CSS minification, SCSS, TypeScript |
+| [09-generators-and-hooks.md](docs/09-generators-and-hooks.md) | Sitemap, RSS, custom generators |
+
+## Architecture Overview
+
+s3gen uses a four-phase build pipeline:
+
+```
+Discover → Transform → Generate → Finalize
+    │          │           │          │
+    │          │           │          └─ Sitemap, RSS, search index
+    │          │           └─ MD→HTML, HTML→HTML, parametric expansion
+    │          └─ SCSS→CSS, image optimization, bundling
+    └─ Find all resources, identify types, load metadata
+```
+
+### Built-in Rules
+
+**Transform Phase:**
+- `CSSMinifier` - Minify CSS files
+- `ExternalTransform` - Run any command-line tool
+- `CopyRule` - Copy static files
+- `NewSCSSTransform()` - SCSS compilation
+- `NewTypeScriptTransform()` - TypeScript compilation
+
+**Generate Phase:**
+- `MDToHtml` - Markdown to HTML
+- `HTMLToHtml` - HTML template processing
+- `ParametricPages` - Generate multiple pages from one template
+
+**Finalize Phase:**
+- `SitemapGenerator` - Generate sitemap.xml
+- `RSSGenerator` - Generate RSS feed
 
 ## Contributing & License
 

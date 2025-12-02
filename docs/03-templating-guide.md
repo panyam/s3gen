@@ -144,6 +144,59 @@ Reads and parses a JSON file from your `content` directory. This is useful for s
         </footer>
         ```
 
+### `AssetURL`
+
+Returns the correct URL for a co-located asset file. This function handles both regular pages (where assets are co-located) and parametric pages (where assets go to a shared folder).
+
+*   **Signature**: `AssetURL(filename string) string`
+*   **Usage Example**:
+
+    For a blog post with an image in the same directory:
+
+    ```
+    content/blog/my-post/
+    ├── index.md
+    └── diagram.png
+    ```
+
+    In your markdown or template:
+
+    ```html
+    <img src="{{ AssetURL "diagram.png" }}" alt="Architecture Diagram" />
+    ```
+
+    This returns:
+    *   `./diagram.png` for regular pages (assets co-located with output)
+    *   `/_assets/{hash}/diagram.png` for parametric pages (shared assets folder)
+    *   `/static/diagram.png` as a fallback if the asset isn't found
+
+*   **In Markdown Content**: The function is available in markdown files as well:
+
+    ```markdown
+    Check out this diagram:
+
+    <img src="{{ AssetURL "chart.svg" }}" alt="Chart" />
+    ```
+
+### `StageSet` and `StageGet`
+
+These functions allow you to pass data between templates within a single render. Useful for complex template hierarchies.
+
+*   **`StageSet`**: Stores a value that can be retrieved later.
+*   **`StageGet`**: Retrieves a previously stored value.
+
+*   **Usage Example**:
+
+    ```html
+    {{/* In PostSimple.html - parse markdown and store the document */}}
+    {{ $parsed := ParseMD .Content }}
+    {{ StageSet "Document" $parsed.Doc "TOC" $parsed.TOC }}
+
+    {{/* Later in Article.html - retrieve and render */}}
+    {{ $doc := StageGet "Document" }}
+    {{ MDToHtml $doc }}
+    ```
+
 ## Passing Data to Templates
 
 When a resource is rendered, `s3gen` passes a data object to the template. This object contains the following fields:

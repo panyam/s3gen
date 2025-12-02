@@ -116,7 +116,9 @@ func main() {
 
 The real power of `s3gen` comes from its extensible, rule-based build system. You can create your own rules to process any file format you need.
 
-To create a custom rule, you need to implement the `s3gen.Rule` interface:
+### The Basic Rule Interface
+
+To create a custom rule, implement the `s3gen.Rule` interface:
 
 ```go
 type Rule interface {
@@ -128,13 +130,56 @@ type Rule interface {
 }
 ```
 
-Here's a simplified example of a rule that could process SASS files:
+### The PhaseRule Interface
+
+For more control over when your rule runs, implement `PhaseRule`:
+
+```go
+type PhaseRule interface {
+	Rule
+
+	// Phase returns which build phase this rule runs in.
+	// Options: PhaseTransform, PhaseGenerate, PhaseFinalize
+	Phase() BuildPhase
+
+	// DependsOn returns glob patterns of files this rule needs as input.
+	// Used to order rules within a phase.
+	DependsOn() []string
+
+	// Produces returns glob patterns of files this rule creates.
+	// Used to order rules within a phase.
+	Produces() []string
+}
+```
+
+### The AssetAwareRule Interface
+
+If your rule handles content files with co-located assets, implement `AssetAwareRule`:
+
+```go
+type AssetAwareRule interface {
+	Rule
+
+	// HandleAssets is called with co-located assets for a resource.
+	// Returns mappings describing how each asset should be processed.
+	HandleAssets(site *Site, res *Resource, assets []*Resource) ([]AssetMapping, error)
+}
+
+type AssetMapping struct {
+	Source *Resource
+	Dest   string      // Path relative to output directory
+	Action AssetAction // AssetCopy, AssetProcess, or AssetSkip
+}
+```
+
+### Example: A Transform Phase Rule
+
+Here's an example of a rule that runs in the Transform phase to process SCSS files:
 
 ```go
 package main
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -142,43 +187,132 @@ import (
 	s3 "github.com/panyam/s3gen"
 )
 
-type SassRule struct{}
+type SCSSRule struct{}
 
-func (s *SassRule) TargetsFor(site *s3.Site, res *s3.Resource) ([]*s3.Resource, []*s3.Resource) {
-	if res.Ext() != ".scss" {
+// Phase declares this runs in the Transform phase
+func (s *SCSSRule) Phase() s3.BuildPhase {
+	return s3.PhaseTransform
+}
+
+// DependsOn declares what files this rule needs
+func (s *SCSSRule) DependsOn() []string {
+	return []string{"**/*.scss"}
+}
+
+// Produces declares what files this rule creates
+func (s *SCSSRule) Produces() []string {
+	return []string{"**/*.css"}
+}
+
+func (s *SCSSRule) TargetsFor(site *s3.Site, res *s3.Resource) ([]*s3.Resource, []*s3.Resource) {
+	if !strings.HasSuffix(res.FullPath, ".scss") {
 		return nil, nil
 	}
 
 	// The output path will be the same as the input path, but with a .css extension
-	destpath := strings.TrimSuffix(res.FullPath, ".scss") + ".css"
-	target := site.GetResource(filepath.Join(site.OutputDir, destpath))
+	outPath := strings.TrimSuffix(res.FullPath, ".scss") + ".css"
+	relPath, _ := filepath.Rel(site.ContentRoot, outPath)
+	destPath := filepath.Join(site.OutputDir, relPath)
+
+	target := site.GetResource(destPath)
 	target.Source = res
 
 	return []*s3.Resource{res}, []*s3.Resource{target}
 }
 
-func (s *SassRule) Run(site *s3.Site, inputs []*s3.Resource, targets []*s3.Resource, funcs map[string]any) error {
-	inPath := inputs[0].FullPath
-	outPath := targets[0].FullPath
+func (s *SCSSRule) Run(site *s3.Site, inputs []*s3.Resource, targets []*s3.Resource, funcs map[string]any) error {
+	input := inputs[0]
+	output := targets[0]
+	output.EnsureDir()
 
-	cmd := exec.Command("sass", inPath, outPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
+	cmd := exec.Command("sass", "--no-source-map", input.FullPath, output.FullPath)
 	return cmd.Run()
+}
+```
+
+### Example: Using Built-in Transform Rules
+
+`s3gen` provides several built-in transform rules:
+
+```go
+import s3 "github.com/panyam/s3gen"
+
+var Site = s3.Site{
+	BuildRules: []s3.Rule{
+		// Minify CSS files (creates .min.css versions)
+		&s3.CSSMinifier{
+			OutputSuffix:    ".min",
+			ExcludePatterns: []string{"*.min.css"},
+		},
+
+		// Compile SCSS to CSS using external sass command
+		s3.NewSCSSTransform(),
+
+		// Compile TypeScript using esbuild
+		s3.NewTypeScriptTransform(),
+
+		// Copy static files
+		&s3.CopyRule{
+			Patterns: []string{"*.woff", "*.woff2", "*.ttf"},
+		},
+
+		// ... other rules
+	},
+}
+```
+
+### Legacy Rule Compatibility
+
+If you have existing rules that don't implement `PhaseRule`, they'll still work. `s3gen` automatically wraps them with `LegacyRuleAdapter`, which runs them in the Generate phase.
+
+## Using Generators
+
+Generators produce site-wide artifacts like sitemaps and RSS feeds. They use hooks to collect data during the build and write output in the Finalize phase.
+
+```go
+import s3 "github.com/panyam/s3gen"
+
+// Create generators
+var sitemapGen = &s3.SitemapGenerator{
+	BaseURL:    "https://example.com",
+	OutputPath: "sitemap.xml",
+	ChangeFreq: "weekly",
+	Priority:   0.5,
+}
+
+var rssGen = &s3.RSSGenerator{
+	Title:       "My Blog",
+	Description: "Latest posts from my blog",
+	BaseURL:     "https://example.com",
+	OutputPath:  "feed.xml",
+	MaxItems:    20,
 }
 
 func main() {
-	var Site = s3.Site{
-		BuildRules: []s3.Rule{
-			&SassRule{},
-			// ... other rules
-		},
-		// ... other site configuration
-	}
+	// Register generators with the site
+	sitemapGen.Register(&Site)
+	rssGen.Register(&Site)
 
+	// Now run the build
 	Site.Rebuild(nil)
 }
 ```
 
-This is a simple example, but it demonstrates the power and flexibility of the rule-based system. You can use this pattern to integrate any build tool or process into your `s3gen` site.
+See [Generators and Hooks](09-generators-and-hooks.md) for more details on creating custom generators.
+
+## Co-Located Assets
+
+`s3gen` supports placing assets (images, data files) next to your content files. Configure which files are treated as assets:
+
+```go
+var Site = s3.Site{
+	AssetPatterns: []string{
+		"*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.webp",
+		"*.mp4", "*.webm", "*.pdf",
+	},
+}
+```
+
+Assets are automatically copied to the output directory alongside the generated HTML. For parametric pages, assets are deduplicated using content hashes.
+
+See [Co-Located Assets](07-co-located-assets.md) for full documentation.
