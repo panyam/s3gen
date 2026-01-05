@@ -84,6 +84,10 @@ func (m *HTMLToHtml) Run(site *Site, inputs []*Resource, targets []*Resource, fu
 			log.Println("Calling OurContent: ", len(finalmd), inres.FullPath)
 			return string(finalmd)
 		},
+		// Dummy functions so shared templates can reference MD functions without errors
+		"ParseMD": func(content []byte) *struct{} {
+			return nil
+		},
 		"MDToHtml": func(input any) string {
 			return "TBD"
 		},
