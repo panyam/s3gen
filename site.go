@@ -168,7 +168,11 @@ func (s *Site) Init() *Site {
 		s.Templates = tmplr.NewTemplateGroup()
 		s.LoaderList = &tmplr.LoaderList{}
 		// Default loader is for templates
-		s.LoaderList.DefaultLoader = tmplr.NewFileSystemLoader(s.TemplateFolders...)
+		folders := make([]tmplr.FSFolder, len(s.TemplateFolders))
+		for i, dir := range s.TemplateFolders {
+			folders[i] = tmplr.LocalFolder(dir)
+		}
+		s.LoaderList.DefaultLoader = tmplr.NewFileSystemLoader(folders...)
 		// s.LoaderList.AddLoader(&ContentLoader{s.ContentRoot})
 		s.Templates.Loader = s.LoaderList
 		s.Templates.AddFuncs(gotl.DefaultFuncMap())
