@@ -15,6 +15,7 @@ import (
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
@@ -25,6 +26,12 @@ import (
 // by Applying the root template defined in c.md as is
 type MDToHtml struct {
 	BaseToHtmlRule
+
+	// HardWraps renders a single source newline as a <br> (goldmark html.WithHardWraps).
+	// Default false: a single newline is a soft break that reflows, matching CommonMark, so a
+	// manually wrapped paragraph renders as one paragraph. Set true only for chat-style content
+	// where each source line is meant to be its own visual line.
+	HardWraps bool
 }
 
 // Phase returns PhaseGenerate - markdown conversion happens in the generate phase.
@@ -44,6 +51,12 @@ func (m *MDToHtml) Produces() []string {
 
 func (m *MDToHtml) MD() (md goldmark.Markdown, tocTransformer *TOCTransformer) {
 	tocTransformer = NewTOCTransformer()
+	// Soft wraps by default (CommonMark): a single newline reflows into the paragraph. Opt into
+	// a <br> per newline with HardWraps for chat-style content.
+	rendererOpts := []renderer.Option{html.WithXHTML(), html.WithUnsafe()}
+	if m.HardWraps {
+		rendererOpts = append(rendererOpts, html.WithHardWraps())
+	}
 	md = goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -84,11 +97,7 @@ func (m *MDToHtml) MD() (md goldmark.Markdown, tocTransformer *TOCTransformer) {
 				},
 			),
 		),
-		goldmark.WithRendererOptions(
-			html.WithHardWraps(),
-			html.WithXHTML(),
-			html.WithUnsafe(),
-		),
+		goldmark.WithRendererOptions(rendererOpts...),
 	)
 	return
 }
