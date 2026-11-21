@@ -1,0 +1,21 @@
+name: vulncheck
+
+# Scans for known vulnerabilities weekly and on each tag, and files a P1 issue when the scan
+# fails, or comments on the open one (panyam/ci-actions#11).
+on:
+  schedule:
+    - cron: '30 6 * * 1'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: panyam/ci-actions/vulncheck@v0.1.1
