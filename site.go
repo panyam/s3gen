@@ -374,7 +374,8 @@ func (s *Site) Rebuild(rs []*Resource) {
 	log.Printf("=== Phase: %s ===", ctx.CurrentPhase)
 	ctx.hooks.emitPhaseStart(ctx)
 
-	if rs == nil {
+	fullBuild := rs == nil
+	if fullBuild {
 		rs = s.ListResources(nil, nil, 0, 0)
 	}
 
@@ -408,6 +409,13 @@ func (s *Site) Rebuild(rs []*Resource) {
 
 	// Handle resources that didn't match any rule (default behavior)
 	s.handleUnmatchedResources(ctx)
+
+	// Static folders go in before Finalize, so a Finalize rule (a search index, say) sees them.
+	if fullBuild {
+		if err := s.CopyStatic(); err != nil {
+			ctx.Errors = append(ctx.Errors, err)
+		}
+	}
 
 	// === PHASE: Finalize ===
 	ctx.CurrentPhase = PhaseFinalize
