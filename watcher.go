@@ -86,9 +86,10 @@ func (s *Site) Watch() {
 	}
 }
 
-// Disables/Stops watching for changes to content files.
+// StopWatching stops the file watcher that Watch started. It does nothing when no watcher is
+// running, so it is safe to call more than once.
 func (s *Site) StopWatching() {
-	if s.reloadWatcher == nil {
+	if s.reloadWatcher != nil {
 		s.reloadWatcher.Close()
 		s.reloadWatcher = nil
 	}

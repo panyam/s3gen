@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/mux"
 	gotl "github.com/panyam/goutils/template"
 	gut "github.com/panyam/goutils/utils"
+	skhttp "github.com/panyam/servicekit/http"
 	tmplr "github.com/panyam/templar"
 	"github.com/radovskyb/watcher"
 )
@@ -579,22 +580,26 @@ func stageFuncs(res *Resource) map[string]any {
 	}
 }
 
+// Serve serves the site at address, under PathPrefix, until the process gets SIGINT or
+// SIGTERM. It then stops accepting connections, gives in-flight requests up to 10 seconds to
+// finish, stops the file watcher if Watch started one, and returns nil.
+//
+// It returns an error when the server cannot start (the port is taken, say), or when requests
+// were still running at the 10 second mark; servicekit's http.ErrDrainTimeout matches the latter.
+// To mount the site in a server of your own, use Handler with http.StripPrefix instead.
 func (s *Site) Serve(address string) error {
-	// Attach our site to be at /`PathPrefix`
-	// The site will also take care of serving static files from /`PathPrefix`/static paths
 	router := mux.NewRouter()
 	router.PathPrefix(s.PathPrefix).Handler(http.StripPrefix(s.PathPrefix, s))
-	// router.PathPrefix(s.PathPrefix).Handler(s)
 
 	srv := &http.Server{
 		Handler: withLogger(router),
 		Addr:    address,
-		// Good practice: enforce timeouts for servers you create!
-		// WriteTimeout: 15 * time.Second,
-		// ReadTimeout:  15 * time.Second,
 	}
 	log.Printf("Serving site on %s:", address)
-	return srv.ListenAndServe()
+	return skhttp.ListenAndServeGraceful(srv,
+		skhttp.WithDrainTimeout(10*time.Second),
+		skhttp.WithOnShutdown(s.StopWatching),
+	)
 }
 
 func withLogger(handler http.Handler) http.Handler {
